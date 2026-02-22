@@ -1,0 +1,402 @@
+"""
+Moat Analysis System - Warren Buffett's 5 Economic Moats
+Analyzes competitive advantages from SEC 10-K filings using RAG
+"""
+
+import logging
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
+
+root_dir = Path(__file__).resolve().parent.parent.parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
+from backend.valuekit_ai.rag.rag_service import get_rag_service
+from backend.valuekit_ai.config.analysis_config import AnalysisConfig
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class MoatScore:
+    """Individual moat type scoring result"""
+
+    name: str
+    score: int  # 0-10
+    evidence: List[str]
+    confidence: str  # "High", "Medium", "Low"
+
+
+@dataclass
+class MoatAnalysis:
+    """Complete moat analysis result"""
+
+    ticker: str
+    overall_score: int  # sum of all moat scores
+    moat_strength: str  # "None", "Narrow", "Wide"
+    moats: Dict[str, MoatScore]
+    red_flags: List[str]
+    competitive_position: str
+    recommendation: str
+
+
+class MoatAnalyzer:
+    """Analyze economic moats from SEC filings using RAG"""
+
+    MOAT_TYPES = {
+        "brand_power": {
+            "name": "Brand Power & Intangible Assets",
+            "indicators": [
+                "brand recognition",
+                "brand value",
+                "customer loyalty",
+                "pricing power",
+                "premium pricing",
+                "brand equity",
+                "trademarks",
+                "patents",
+                "intellectual property",
+                "reputation",
+                "trust",
+                "consumer preference",
+            ],
+            "query_template": (
+                "What evidence exists of {ticker}'s brand strength, pricing power, "
+                "and intangible assets? Look for customer loyalty, brand recognition, "
+                "and ability to charge premium prices."
+            ),
+        },
+        "switching_costs": {
+            "name": "Switching Costs",
+            "indicators": [
+                "customer retention",
+                "switching costs",
+                "lock-in",
+                "integration costs",
+                "training costs",
+                "migration difficulty",
+                "long-term contracts",
+                "sticky products",
+                "ecosystem",
+                "data migration",
+                "compatibility",
+                "learning curve",
+            ],
+            "query_template": (
+                "What switching costs or customer lock-in mechanisms does {ticker} have? "
+                "Look for high customer retention, long-term contracts, integration "
+                "complexity, or ecosystem effects."
+            ),
+        },
+        "network_effects": {
+            "name": "Network Effects",
+            "indicators": [
+                "network effect",
+                "user base",
+                "platform",
+                "marketplace",
+                "two-sided market",
+                "viral growth",
+                "critical mass",
+                "interconnected",
+                "ecosystem participants",
+                "flywheel",
+            ],
+            "query_template": (
+                "Does {ticker} benefit from network effects? Look for platforms, "
+                "marketplaces, or products that become more valuable as more users join."
+            ),
+        },
+        "cost_advantages": {
+            "name": "Cost Advantages",
+            "indicators": [
+                "economies of scale",
+                "cost advantage",
+                "low cost producer",
+                "operational efficiency",
+                "supply chain",
+                "vertical integration",
+                "proprietary process",
+                "automation",
+                "scale benefits",
+            ],
+            "query_template": (
+                "What cost advantages does {ticker} have over competitors? "
+                "Look for economies of scale, proprietary processes, or structural "
+                "cost advantages."
+            ),
+        },
+        "efficient_scale": {
+            "name": "Efficient Scale",
+            "indicators": [
+                "regulated",
+                "monopoly",
+                "oligopoly",
+                "limited competition",
+                "market dominance",
+                "barriers to entry",
+                "license",
+                "regulatory approval",
+                "natural monopoly",
+            ],
+            "query_template": (
+                "Does {ticker} operate in a market with efficient scale or high "
+                "barriers to entry? Look for regulatory moats, natural monopolies, "
+                "or oligopoly dynamics."
+            ),
+        },
+    }
+
+    RED_FLAG_CATEGORIES = {
+        "debt": {
+            "query": "What are {ticker}'s debt levels and ability to service debt?",
+        },
+        "competition": {
+            "query": "What serious competitive threats does {ticker} face?",
+        },
+        "regulation": {
+            "query": "What regulatory or legal risks threaten {ticker}'s business?",
+        },
+    }
+
+    def __init__(self):
+        self.rag = get_rag_service()
+
+    def analyze_single_moat(
+        self, ticker: str, moat_key: str, moat_config: Dict
+    ) -> MoatScore:
+        """
+        Analyze a single moat type
+
+        Args:
+            ticker: Stock ticker
+            moat_key: Key from MOAT_TYPES
+            moat_config: Config dict for this moat type
+
+        Returns:
+            MoatScore with 0-10 rating
+        """
+        query = moat_config["query_template"].format(ticker=ticker)
+        result = self.rag.analyze_with_rag(
+            query=query,
+            quantitative_data={"ticker": ticker},
+        )
+
+        if result["status"] != "success":
+            log.warning(
+                "[moat_analyzer][analysis_failed] ticker=%s moat=%s", ticker, moat_key
+            )
+            return MoatScore(
+                name=moat_config["name"],
+                score=0,
+                evidence=["Analysis failed"],
+                confidence="Low",
+            )
+
+        analysis_text = result["analysis"].lower()
+        indicator_count = sum(
+            1 for ind in moat_config["indicators"] if ind.lower() in analysis_text
+        )
+
+        evidence = self._extract_evidence(result["analysis"], moat_config["indicators"])
+        source_count = len(result.get("sources", []))
+
+        # Score calculation
+        base_score = min(10, (indicator_count / len(moat_config["indicators"])) * 20)
+        source_bonus = min(2, source_count / 3)
+        evidence_bonus = min(2, len(evidence))
+        score = int(min(10, base_score + source_bonus + evidence_bonus))
+
+        # Confidence ceiling based on source count and indicators
+        if source_count >= 3 and indicator_count >= 3:
+            confidence, ceiling = "High", 10
+        elif source_count >= 2 and indicator_count >= 2:
+            confidence, ceiling = "Medium", 8
+        else:
+            confidence, ceiling = "Low", 5
+
+        final_score = min(score, ceiling)
+
+        log.debug(
+            "[moat_analyzer][score] ticker=%s moat=%s indicators=%d sources=%d "
+            "confidence=%s ceiling=%d final_score=%d",
+            ticker,
+            moat_key,
+            indicator_count,
+            source_count,
+            confidence,
+            ceiling,
+            final_score,
+        )
+
+        return MoatScore(
+            name=moat_config["name"],
+            score=final_score,
+            evidence=evidence[:3],
+            confidence=confidence,
+        )
+
+    def _extract_evidence(self, analysis_text: str, indicators: List[str]) -> List[str]:
+        """Extract sentences containing moat indicators as evidence"""
+        sentences = analysis_text.split(".")
+        evidence = []
+        for sentence in sentences:
+            if any(ind.lower() in sentence.lower() for ind in indicators):
+                cleaned = sentence.strip()
+                if cleaned and len(cleaned) > 20:
+                    evidence.append(cleaned)
+        return evidence[:5]
+
+    def detect_red_flags(
+        self, ticker: str, enabled_categories: List[str] = None
+    ) -> List[str]:
+        """
+        Detect investment red flags
+
+        Args:
+            ticker: Stock ticker
+            enabled_categories: Categories to check (None = all)
+
+        Returns:
+            List of identified red flag descriptions
+        """
+        if enabled_categories is None:
+            enabled_categories = list(self.RED_FLAG_CATEGORIES.keys())
+
+        red_flags = []
+
+        for category in enabled_categories:
+            if category not in self.RED_FLAG_CATEGORIES:
+                continue
+
+            config = self.RED_FLAG_CATEGORIES[category]
+            query = config["query"].format(ticker=ticker)
+            result = self.rag.analyze_with_rag(query=query)
+
+            if result["status"] == "success":
+                analysis = result["analysis"].lower()
+                risk_keywords = [
+                    "significant risk",
+                    "major concern",
+                    "serious threat",
+                    "material impact",
+                    "substantial risk",
+                    "critical",
+                ]
+                if any(kw in analysis for kw in risk_keywords):
+                    red_flags.append(
+                        f"{category.title()}: {result['analysis'][:200]}..."
+                    )
+                    log.debug(
+                        "[moat_analyzer][red_flag] ticker=%s category=%s",
+                        ticker,
+                        category,
+                    )
+
+        log.info(
+            "[moat_analyzer][red_flags] ticker=%s count=%d", ticker, len(red_flags)
+        )
+        return red_flags
+
+    def analyze_moats(
+        self, ticker: str, config: Optional[AnalysisConfig] = None
+    ) -> MoatAnalysis:
+        """
+        Run complete moat analysis
+
+        Args:
+            ticker: Stock ticker
+            config: AnalysisConfig (controls which moats to analyze)
+
+        Returns:
+            MoatAnalysis with scores and recommendation
+        """
+        log.info("[moat_analyzer][start] ticker=%s", ticker)
+
+        enabled_moats = (
+            config.enabled_moats
+            if config and hasattr(config, "enabled_moats")
+            else list(self.MOAT_TYPES.keys())
+        )
+
+        moats = {}
+        total_score = 0
+
+        for moat_key in enabled_moats:
+            if moat_key not in self.MOAT_TYPES:
+                continue
+            moat_config = self.MOAT_TYPES[moat_key]
+            moat_score = self.analyze_single_moat(ticker, moat_key, moat_config)
+            moats[moat_key] = moat_score
+            total_score += moat_score.score
+
+        # Red flags
+        enabled_rf = (
+            config.enabled_red_flag_categories
+            if config and hasattr(config, "enabled_red_flag_categories")
+            else None
+        )
+        red_flags = self.detect_red_flags(ticker, enabled_rf)
+
+        # Moat strength based on number of enabled moats
+        max_possible = len(moats) * 10
+        score_pct = (total_score / max_possible * 100) if max_possible > 0 else 0
+
+        if score_pct >= 60:
+            moat_strength = "Wide"
+        elif score_pct >= 35:
+            moat_strength = "Narrow"
+        else:
+            moat_strength = "None"
+
+        competitive_position = self._assess_competitive_position(moats, red_flags)
+        recommendation = self._generate_recommendation(
+            moat_strength, total_score, red_flags
+        )
+
+        log.info(
+            "[moat_analyzer][complete] ticker=%s total_score=%d moat_strength=%s red_flags=%d",
+            ticker,
+            total_score,
+            moat_strength,
+            len(red_flags),
+        )
+
+        return MoatAnalysis(
+            ticker=ticker,
+            overall_score=total_score,
+            moat_strength=moat_strength,
+            moats=moats,
+            red_flags=red_flags,
+            competitive_position=competitive_position,
+            recommendation=recommendation,
+        )
+
+    def _assess_competitive_position(
+        self, moats: Dict[str, MoatScore], red_flags: List[str]
+    ) -> str:
+        strong = [k for k, v in moats.items() if v.score >= 7]
+        moderate = [k for k, v in moats.items() if 4 <= v.score < 7]
+
+        if len(strong) >= 2 and len(red_flags) == 0:
+            return "Strong competitive position with multiple durable moats"
+        elif len(strong) >= 1 or len(moderate) >= 2:
+            return "Moderate competitive position with some protective advantages"
+        else:
+            return "Weak competitive position with limited moat evidence"
+
+    def _generate_recommendation(
+        self, moat_strength: str, total_score: int, red_flags: List[str]
+    ) -> str:
+        if moat_strength == "Wide" and len(red_flags) == 0:
+            return "STRONG BUY - Wide moat with no significant red flags"
+        elif moat_strength == "Wide":
+            return "BUY - Wide moat, monitor identified risks"
+        elif moat_strength == "Narrow" and len(red_flags) <= 1:
+            return "HOLD - Narrow moat, requires margin of safety"
+        elif moat_strength == "Narrow":
+            return "PASS - Narrow moat with multiple red flags"
+        else:
+            return "PASS - No identifiable economic moat"
