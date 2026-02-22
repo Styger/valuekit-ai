@@ -54,7 +54,9 @@ class CacheManager:
         """
         if cache_dir is None:
             # Default cache location
-            self.cache_dir = Path(__file__).parent.parent / "data" / "cache"
+            self.cache_dir = (
+                Path(__file__).resolve().parent.parent.parent / "data" / "cache"
+            )
         else:
             self.cache_dir = Path(cache_dir)
 
@@ -79,24 +81,24 @@ class CacheManager:
         for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
 
-    def _load_metadata(self) -> Dict:
+    def _load_metadata(self, key: str) -> Dict:
         """Load cache metadata from JSON"""
         if self.metadata_file.exists():
             try:
                 with open(self.metadata_file, "r") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"⚠️  Could not load metadata: {e}")
+                log.info("[cache_manager][clear] key=%s", key)
                 return {}
         return {}
 
-    def _save_metadata(self):
+    def _save_metadata(self, key: str):
         """Save cache metadata to JSON"""
         try:
             with open(self.metadata_file, "w") as f:
                 json.dump(self.metadata, f, indent=2)
         except Exception as e:
-            print(f"⚠️  Could not save metadata: {e}")
+            log.info("[cache_manager][clear] key=%s", key)
 
     def _get_cache_path(self, key: str, data_type: str) -> Path:
         """Get cache file path for a key"""
@@ -235,7 +237,7 @@ class CacheManager:
             cache_path = self._get_cache_path(key, data_type or "misc")
             if cache_path.exists():
                 cache_path.unlink()
-                print(f"  🗑️  Cleared: {key}")
+                log.info("[cache_manager][clear] key=%s", key)
 
             if key in self.metadata:
                 del self.metadata[key]
@@ -255,7 +257,7 @@ class CacheManager:
                     del self.metadata[cache_key]
 
             self._save_metadata()
-            print(f"  🗑️  Cleared {cleared} cache entries")
+            log.info("[cache_manager][clear] cleared=%d entries", cleared)
 
     def get_stats(self) -> Dict:
         """Get cache statistics"""
