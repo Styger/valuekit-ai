@@ -5,7 +5,7 @@ import os
 import sys
 import logging
 import re
-from backend.valuekit_ai.config import load_config
+import os
 from backend.cache import get_cache_manager
 
 log = logging.getLogger(__name__)
@@ -87,11 +87,16 @@ def resource_path(relative_path):
 
 
 def get_api_key() -> str:
-    import streamlit as st
+    try:
+        import streamlit as st
 
-    key = st.secrets.get("fmp", {}).get("api_key") or os.environ.get("FMP_API_KEY", "")
+        key = st.secrets.get("fmp", {}).get("api_key", "")
+    except Exception:
+        key = os.environ.get("FMP_API_KEY", "")
     if not key:
-        raise ValueError("FMP API key not configured in secrets.toml or environment")
+        raise ValueError(
+            "FMP API key not configured in secrets.toml or FMP_API_KEY env var"
+        )
     log.debug("[fmp_api][get_api_key] key=%s***", key[:8])
     return key
 

@@ -81,24 +81,24 @@ class CacheManager:
         for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
 
-    def _load_metadata(self, key: str) -> Dict:
+    def _load_metadata(self) -> Dict:
         """Load cache metadata from JSON"""
         if self.metadata_file.exists():
             try:
                 with open(self.metadata_file, "r") as f:
                     return json.load(f)
             except Exception as e:
-                log.info("[cache_manager][clear] key=%s", key)
+                log.warning("[cache_manager][metadata_load_error] error=%s", e)
                 return {}
         return {}
 
-    def _save_metadata(self, key: str):
+    def _save_metadata(self):
         """Save cache metadata to JSON"""
         try:
             with open(self.metadata_file, "w") as f:
                 json.dump(self.metadata, f, indent=2)
         except Exception as e:
-            log.info("[cache_manager][clear] key=%s", key)
+            log.warning("[cache_manager][metadata_save_error] error=%s", e)
 
     def _get_cache_path(self, key: str, data_type: str) -> Path:
         """Get cache file path for a key"""
