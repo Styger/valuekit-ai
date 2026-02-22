@@ -52,7 +52,10 @@ class RAGConfig:
     VOYAGE_API_KEY = _load_secret.__func__(["voyage", "api_key"], "VOYAGE_API_KEY")
 
     # ChromaDB Settings
-    CHROMA_PERSIST_DIR = "./backend/ai/data/chroma_db"
+    CHROMA_PERSIST_DIR = str(
+        Path(__file__).resolve().parent.parent.parent.parent / "data" / "chroma_db"
+    )
+
     COLLECTION_NAME = "valuekit_financial_data"
 
     # Chunking Settings

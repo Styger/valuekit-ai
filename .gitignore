@@ -214,3 +214,12 @@ data/cache/
 data/chroma_db/
 sec-edgar-filings/
 *.pkl
+
+# ChromaDB
+backend/ai/data/chroma_db/
+data/chroma_db/
+*.sqlite3
+data_level0.bin
+header.bin
+length.bin
+link_lists.bin
