@@ -55,7 +55,7 @@ class SECEdgarFetcher:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         log.info("[sec_fetcher][init] data_dir=%s", self.data_dir)
 
-        self.dl = Downloader(company_name, email)
+        self.dl = Downloader(company_name, email, self.data_dir)
         self.temp_dir = Path("./sec_temp")
         self.cache = get_cache_manager()
 
@@ -78,7 +78,7 @@ class SECEdgarFetcher:
             log.info("[sec_fetcher][download] ticker=%s", ticker)
             self.dl.get("10-K", ticker, limit=1)
 
-            search_dir = Path("sec-edgar-filings") / ticker / "10-K"
+            search_dir = self.data_dir / "sec-edgar-filings" / ticker / "10-K"
 
             if not search_dir.exists():
                 log.error("[sec_fetcher][dir_not_found] path=%s", search_dir)

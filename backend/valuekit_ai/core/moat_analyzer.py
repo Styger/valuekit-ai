@@ -13,6 +13,7 @@ root_dir = Path(__file__).resolve().parent.parent.parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
+from backend.valuekit_ai.config.config import PIPELINE_VERSION
 from backend.valuekit_ai.rag.rag_service import get_rag_service
 from backend.valuekit_ai.config.analysis_config import AnalysisConfig
 
@@ -300,26 +301,23 @@ class MoatAnalyzer:
         )
         return red_flags
 
+    # Lines ~: replace the buggy analyze_moats method
+
     def analyze_moats(
         self, ticker: str, config: Optional[AnalysisConfig] = None
     ) -> MoatAnalysis:
-        """
-        Run complete moat analysis
-
-        Args:
-            ticker: Stock ticker
-            config: AnalysisConfig (controls which moats to analyze)
-
-        Returns:
-            MoatAnalysis with scores and recommendation
-        """
-        log.info("[moat_analyzer][start] ticker=%s", ticker)
-
-        enabled_moats = (
-            config.enabled_moats
-            if config and hasattr(config, "enabled_moats")
-            else list(self.MOAT_TYPES.keys())
+        log.info(
+            "[moat_analyzer][start] ticker=%s pipeline_version=%s",
+            ticker,
+            PIPELINE_VERSION,
         )
+
+        if config:
+            enabled_moats = config.get_enabled_moats()
+            enabled_rf = config.get_enabled_red_flags() if config.run_red_flags else []
+        else:
+            enabled_moats = list(self.MOAT_TYPES.keys())
+            enabled_rf = list(self.RED_FLAG_CATEGORIES.keys())
 
         moats = {}
         total_score = 0
@@ -332,15 +330,8 @@ class MoatAnalyzer:
             moats[moat_key] = moat_score
             total_score += moat_score.score
 
-        # Red flags
-        enabled_rf = (
-            config.enabled_red_flag_categories
-            if config and hasattr(config, "enabled_red_flag_categories")
-            else None
-        )
         red_flags = self.detect_red_flags(ticker, enabled_rf)
 
-        # Moat strength based on number of enabled moats
         max_possible = len(moats) * 10
         score_pct = (total_score / max_possible * 100) if max_possible > 0 else 0
 
@@ -353,15 +344,18 @@ class MoatAnalyzer:
 
         competitive_position = self._assess_competitive_position(moats, red_flags)
         recommendation = self._generate_recommendation(
-            moat_strength, total_score, red_flags
+            total_score, moat_strength, red_flags
         )
 
         log.info(
-            "[moat_analyzer][complete] ticker=%s total_score=%d moat_strength=%s red_flags=%d",
+            "[moat_analyzer][complete] ticker=%s strength=%s score=%d/%d "
+            "red_flags=%d pipeline_version=%s",
             ticker,
-            total_score,
             moat_strength,
+            total_score,
+            max_possible,
             len(red_flags),
+            PIPELINE_VERSION,
         )
 
         return MoatAnalysis(
@@ -388,7 +382,7 @@ class MoatAnalyzer:
             return "Weak competitive position with limited moat evidence"
 
     def _generate_recommendation(
-        self, moat_strength: str, total_score: int, red_flags: List[str]
+        self, overall_score: int, moat_strength: str, red_flags: List[str]
     ) -> str:
         if moat_strength == "Wide" and len(red_flags) == 0:
             return "STRONG BUY - Wide moat with no significant red flags"
