@@ -17,6 +17,8 @@ from backend.valuekit_ai.config.config import PIPELINE_VERSION
 from backend.valuekit_ai.core.investment_analyzer import IntegratedAnalyzer
 from backend.logic.mos import calculate_mos_value_from_ticker
 from backend.logic.cagr import _mos_growth_estimate_auto
+from backend.logic.tencap import _get_ten_cap_result
+from backend.logic.pbt import _get_pbt_result
 from backend.logic import profitability
 from backend.api import fmp_api
 
@@ -197,6 +199,38 @@ class ValueKitAnalyzer:
                     e,
                 )
 
+        # Step 3b: TenCap
+        tencap_result = None
+        if config is None or getattr(config, "run_tencap", True):
+            try:
+                tencap_result = _get_ten_cap_result(ticker, year)
+                log.info(
+                    "[valuekit_integration][tencap_complete] ticker=%s fair_value=%s",
+                    ticker,
+                    tencap_result.get("ten_cap_fair_value") if tencap_result else None,
+                )
+            except Exception as e:
+                log.warning(
+                    "[valuekit_integration][tencap_failed] ticker=%s error=%s",
+                    ticker,
+                    e,
+                )
+
+        # Step 3c: PBT
+        pbt_result = None
+        if config is None or getattr(config, "run_pbt", True):
+            try:
+                pbt_result = _get_pbt_result(ticker, year, growth_rate or 0.10)
+                log.info(
+                    "[valuekit_integration][pbt_complete] ticker=%s fair_value=%s",
+                    ticker,
+                    pbt_result.get("fair_value") if pbt_result else None,
+                )
+            except Exception as e:
+                log.warning(
+                    "[valuekit_integration][pbt_failed] ticker=%s error=%s", ticker, e
+                )
+
         # Step 4: Build quantitative metrics for AI
         quantitative_metrics = {}
         if mos_result:
@@ -248,6 +282,8 @@ class ValueKitAnalyzer:
             "discount_rate": discount_rate,
             "margin_of_safety_pct": margin_of_safety,
             "mos_result": mos_result,
+            "tencap_result": tencap_result,
+            "pbt_result": pbt_result,
             "profitability_result": profitability_result,
             "ai_decision": ai_decision.to_dict() if ai_decision else None,
             "final_recommendation": final_recommendation,

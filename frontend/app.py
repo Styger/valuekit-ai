@@ -21,6 +21,7 @@ from backend.valuekit_ai.config.analysis_config import AnalysisConfig
 from backend.valuekit_ai.core.valuekit_integration import ValueKitAnalyzer
 from backend.logic.mos import calculate_mos_value_from_ticker
 from backend.logic import profitability
+from backend.logic.tencap import _get_ten_cap_result
 from backend.logic.pbt import calculate_pbt_from_ticker, calculate_pbt_with_comparison
 from backend.logic.cagr import (
     _mos_growth_estimate_auto,
@@ -42,6 +43,91 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+# ─── Combined Score ───────────────────────────────────────────────────────────
+
+
+def _compute_combined_score(
+    result, w_mos, w_tencap, w_pbt, quant_vs_moat, mos_pct=0.50
+):
+    """Weighted combined score 0-100. Quant = price vs fair value per method."""
+
+    def _price_score(current: float, fair: float) -> float:
+        """100 = deeply undervalued, 0 = severely overvalued."""
+        if not current or not fair or fair <= 0 or current <= 0:
+            return None
+        ratio = current / fair
+        return max(0.0, min(100.0, (2.0 - ratio) * 50))
+
+    mos = result.get("mos_result") or {}
+    tc = result.get("tencap_result") or {}
+    pb = result.get("pbt_result") or {}
+    ai = result.get("ai_decision") or {}
+
+    current = mos.get("Current Stock Price")
+    scores = {
+        "mos": _price_score(current, mos.get("Fair Value Today")),
+        "tencap": _price_score(
+            tc.get("current_stock_price"),
+            tc.get("ten_cap_fair_value") * (1 - mos_pct)
+            if tc.get("ten_cap_fair_value")
+            else None,
+        ),
+        "pbt": _price_score(
+            pb.get("current_stock_price"),
+            pb.get("fair_value") * (1 - mos_pct) if pb.get("fair_value") else None,
+        ),
+    }
+
+    parts = [
+        (scores["mos"], w_mos),
+        (scores["tencap"], w_tencap),
+        (scores["pbt"], w_pbt),
+    ]
+    effective_w = sum(wt for s, wt in parts if s is not None)
+    quant_score = (
+        round(sum(s * wt for s, wt in parts if s is not None) / effective_w, 1)
+        if effective_w > 0
+        else None
+    )
+
+    moat_score = ai.get("overall_score") if isinstance(ai, dict) else None
+
+    q = quant_vs_moat / 100
+    if quant_score is not None and moat_score is not None:
+        combined = round(quant_score * q + moat_score * (1 - q), 1)
+    elif quant_score is not None:
+        combined = quant_score
+    elif moat_score is not None:
+        combined = float(moat_score)
+    else:
+        combined = None
+
+    rec = (
+        "STRONG BUY"
+        if combined is not None and combined >= 75
+        else "BUY"
+        if combined is not None and combined >= 55
+        else "HOLD"
+        if combined is not None and combined >= 40
+        else "PASS"
+        if combined is not None
+        else "N/A"
+    )
+
+    log.debug(
+        "[app][combined_score] quant=%s moat=%s combined=%s rec=%s",
+        quant_score,
+        moat_score,
+        combined,
+        rec,
+    )
+    return {
+        "combined": combined,
+        "quant_score": quant_score,
+        "moat_score": moat_score,
+        "component_scores": scores,
+        "recommendation": rec,
+    }
 
 
 # ─── Session State ───────────────────────────────────────────────────────────
@@ -838,10 +924,9 @@ def _page_moat():
                 c1.metric("Moat Decision", ai.get("decision", "N/A"))
                 c2.metric("Confidence", ai.get("confidence", "N/A"))
                 c3.metric("Overall Score", f"{ai.get('overall_score', 0)}/100")
-                c4.metric("Quant Score", f"{ai.get('quantitative_score', 0)}/100")
+                c4.metric("Moat Strength", ai.get("moat_strength", "N/A"))
 
                 st.markdown("---")
-                st.markdown(f"**Moat Strength:** {ai.get('moat_strength', 'N/A')}")
                 st.markdown(f"**Reasoning:** {ai.get('reasoning', 'N/A')}")
 
                 if ai.get("red_flags"):
@@ -867,7 +952,9 @@ def _page_moat():
 
 def _page_overview():
     st.header("📊 Overview — Full Pipeline")
-    st.caption("Runs all components: CAGR → MOS → Profitability → AI Moat.")
+    st.caption(
+        "Runs all components: CAGR → MOS → TenCap → PBT → Profitability → AI Moat."
+    )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -885,6 +972,26 @@ def _page_overview():
     load_sec = col3.checkbox("Load SEC Filings", value=False, key="ov_sec")
     load_earnings = col4.checkbox(
         "Load Earnings Transcripts", value=False, key="ov_earn"
+    )
+
+    st.markdown("---")
+    st.markdown("**Score Weights**")
+    st.caption("Quant sub-weights — must sum to 100")
+    wc1, wc2, wc3 = st.columns(3)
+    w_mos = wc1.slider("MOS %", 0, 100, 34, 1, key="ov_w_mos")
+    w_tencap = wc2.slider("TenCap %", 0, 100, 33, 1, key="ov_w_tencap")
+    w_pbt = wc3.slider("PBT %", 0, 100, 33, 1, key="ov_w_pbt")
+    if (w_mos + w_tencap + w_pbt) != 100:
+        st.warning(f"Quant weights sum to {w_mos + w_tencap + w_pbt} — must be 100")
+
+    quant_vs_moat = st.slider(
+        "Quant vs Moat (%)",
+        0,
+        100,
+        60,
+        10,
+        key="ov_qvm",
+        help="60 = 60% Quant Score / 40% Moat Score",
     )
 
     if st.button("Run Full Analysis", type="primary", key="ov_run"):
@@ -926,8 +1033,41 @@ def _page_overview():
                 )
 
                 st.session_state["analysis_count"] += 1
+
+                # Combined Score
+                score_data = _compute_combined_score(
+                    result, w_mos, w_tencap, w_pbt, quant_vs_moat, mos_pct
+                )
+                if score_data["combined"] is not None:
+                    st.subheader("🎯 Combined Investment Score")
+                    cs1, cs2, cs3 = st.columns(3)
+                    cs1.metric("Combined Score", f"{score_data['combined']:.0f} / 100")
+                    cs2.metric(
+                        "Quant Score",
+                        f"{score_data['quant_score']:.0f} / 100"
+                        if score_data["quant_score"] is not None
+                        else "N/A",
+                    )
+                    cs3.metric(
+                        "Moat Score",
+                        f"{score_data['moat_score']} / 100"
+                        if score_data["moat_score"] is not None
+                        else "N/A",
+                    )
+                    rec_fn = {
+                        "STRONG BUY": st.success,
+                        "BUY": st.success,
+                        "HOLD": st.warning,
+                        "PASS": st.error,
+                    }.get(score_data["recommendation"], st.info)
+                    rec_fn(
+                        f"**Score Recommendation: {score_data['recommendation']}** "
+                        f"({quant_vs_moat}% Quant / {100 - quant_vs_moat}% Moat)"
+                    )
+                    st.divider()
+
                 rec = result.get("final_recommendation", "N/A")
-                _show_recommendation(f"Final Recommendation: {rec}")
+                _show_recommendation(f"Pipeline Recommendation: {rec}")
 
                 # MOS
                 if result.get("mos_result"):
@@ -944,6 +1084,39 @@ def _page_overview():
                         f"Price vs Fair Value: {r.get('Price vs Fair Value', 'N/A')} | "
                         f"Growth Rate: {r.get('Growth Rate', 0):.1f}% | "
                         f"MOS: {r.get('Margin of Safety', 'N/A')}"
+                    )
+                    st.divider()
+
+                # TenCap
+                if result.get("tencap_result"):
+                    r = result["tencap_result"]
+                    st.subheader("🔟 TenCap")
+                    c1, c2, c3 = st.columns(3)
+                    tc_mos_price = r.get("ten_cap_fair_value", 0) * (1 - mos_pct)
+                    c1.metric(
+                        f"TenCap Buy Price ({mos_pct * 100:.0f}% MOS)",
+                        f"${tc_mos_price:.2f}",
+                    )
+                    c2.metric(
+                        "TenCap Fair Value", f"${r.get('ten_cap_fair_value', 0):.2f}"
+                    )
+                    c3.metric(
+                        "Current Price", f"${r.get('current_stock_price', 0):.2f}"
+                    )
+                    st.divider()
+
+                # PBT
+                if result.get("pbt_result"):
+                    r = result["pbt_result"]
+                    st.subheader("⏱️ Payback Time")
+                    c1, c2, c3 = st.columns(3)
+                    pbt_mos_price = r.get("fair_value", 0) * (1 - mos_pct)
+                    c1.metric(
+                        f"Buy Price ({mos_pct * 100:.0f}% MOS)", f"${pbt_mos_price:.2f}"
+                    )
+                    c2.metric("Fair Value (2×)", f"${r.get('fair_value', 0):.2f}")
+                    c3.metric(
+                        "Current Price", f"${r.get('current_stock_price', 0):.2f}"
                     )
                     st.divider()
 
@@ -967,10 +1140,11 @@ def _page_overview():
                 if result.get("ai_decision"):
                     ai = result["ai_decision"]
                     st.subheader("🤖 AI Moat")
-                    c1, c2, c3 = st.columns(3)
+                    c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Decision", ai.get("decision", "N/A"))
                     c2.metric("Confidence", ai.get("confidence", "N/A"))
                     c3.metric("Overall Score", f"{ai.get('overall_score', 0)}/100")
+                    c4.metric("Moat Strength", ai.get("moat_strength", "N/A"))
                     st.markdown(f"**Reasoning:** {ai.get('reasoning', 'N/A')}")
                     if ai.get("red_flags"):
                         st.warning("**Red Flags:** " + " · ".join(ai["red_flags"]))
