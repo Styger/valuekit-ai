@@ -28,6 +28,7 @@ from backend.logic.cagr import (
     run_analysis as cagr_run_analysis,
 )
 from backend.api import fmp_api
+import streamlit_authenticator as stauth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1166,8 +1167,41 @@ def _page_overview():
 def main():
     _init_session_state()
 
-    selected = _render_sidebar()
+    creds = st.secrets.get("auth", {})
 
+    import json
+
+    def _secrets_to_dict(obj):
+        """Recursively convert AttrDict/secrets to plain mutable dict."""
+        if hasattr(obj, "items"):
+            return {k: _secrets_to_dict(v) for k, v in obj.items()}
+        return obj
+
+    credentials_mutable = _secrets_to_dict(st.secrets["auth"]["credentials"])
+    authenticator = stauth.Authenticate(
+        credentials=credentials_mutable,
+        cookie_name=creds.get("cookie_name", "valuekit_auth"),
+        cookie_key=creds.get("cookie_key", "changeme"),
+        cookie_expiry_days=int(creds.get("cookie_expiry_days", 1)),
+    )
+
+    authenticator.login(location="main", fields={"Form name": "ValueKit AI — Login"})
+    auth_status = st.session_state.get("authentication_status")
+    name = st.session_state.get("name")
+    username = st.session_state.get("username")
+
+    if auth_status is False:
+        st.error("Username oder Passwort falsch.")
+        return
+    if auth_status is None:
+        st.info("Bitte einloggen.")
+        return
+
+    # Authenticated
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.caption(f"Eingeloggt als: **{name}**")
+
+    selected = _render_sidebar()
     PAGE_FN = {
         "📊 Overview": _page_overview,
         "📈 CAGR Growth Estimate": _page_cagr,
@@ -1176,7 +1210,6 @@ def main():
         "⏱️ Payback Time (PBT)": _page_pbt,
         "🤖 AI Moat Analysis": _page_moat,
     }
-
     PAGE_FN[selected]()
 
 

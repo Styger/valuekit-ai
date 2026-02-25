@@ -91,6 +91,15 @@ class RAGService:
             Dict with analysis, sources, and metadata
         """
         retrieved_docs = self.vector_store.similarity_search_with_score(query)
+        # Deduplicate by content — same chunk retrieved multiple times inflates context
+        seen = set()
+        unique_docs = []
+        for doc, score in retrieved_docs:
+            h = hash(doc.page_content)
+            if h not in seen:
+                seen.add(h)
+                unique_docs.append((doc, score))
+        retrieved_docs = unique_docs
         context = self._format_context([doc for doc, score in retrieved_docs])
         prompt = self._build_analysis_prompt(query, context, quantitative_data)
 
