@@ -313,7 +313,45 @@ class MoatAnalyzer:
             sum(s.get("relevance_score", 0.0) for s in sources) / source_count
         )
 
-        # Score calculation
+        # ── Source diversity check ────────────────────────────────────────────
+        # Deduplicate by (document_type, year) so that five chunks that all
+        # originate from the same filing year of the same doc type only count
+        # as one unique origin.  The distinct document_type values in that
+        # deduplicated set then determine the diversity tier.
+        unique_origins: set = {
+            (
+                s.get("metadata", {}).get("document_type", "unknown"),
+                s.get("metadata", {}).get("year"),
+            )
+            for s in sources
+        }
+        unique_doc_types: set = {origin[0] for origin in unique_origins}
+        n_doc_types = len(unique_doc_types)
+        has_earnings = any(
+            "earnings" in dt.lower() for dt in unique_doc_types if dt
+        )
+
+        # Tier definitions (per spec):
+        #   High   → 3+ distinct doc types AND includes earnings → cap 10
+        #   Medium → 2 distinct doc types (or 3+ without earnings) → cap 8
+        #   Low    → single doc type (all same source) → cap 7
+        if n_doc_types >= 3 and has_earnings:
+            diversity_level, diversity_ceiling = "High", 10
+        elif n_doc_types >= 2:
+            diversity_level, diversity_ceiling = "Medium", 8
+        else:
+            diversity_level, diversity_ceiling = "Low", 7
+
+        log.debug(
+            "[moat_analyzer][diversity] ticker=%s moat=%s "
+            "unique_origins=%d unique_doc_types=%s has_earnings=%s "
+            "level=%s diversity_ceiling=%d",
+            ticker, moat_key,
+            len(unique_origins), sorted(unique_doc_types), has_earnings,
+            diversity_level, diversity_ceiling,
+        )
+
+        # ── Score calculation ─────────────────────────────────────────────────
         base_score = min(10, (indicator_count / len(moat_config["indicators"])) * 20)
         source_bonus = min(2, source_count / 3)
         evidence_bonus = min(2, len(evidence))
@@ -327,17 +365,23 @@ class MoatAnalyzer:
         else:
             confidence, ceiling = "Low", 5
 
-        final_score = min(score, ceiling)
+        # Apply both ceilings: confidence gates quality of evidence;
+        # diversity gates breadth of source types.  Both must be satisfied.
+        final_score = min(score, ceiling, diversity_ceiling)
 
         log.debug(
             "[moat_analyzer][score] ticker=%s moat=%s indicators=%d sources=%d "
-            "confidence=%s ceiling=%d final_score=%d",
+            "confidence=%s ceiling=%d diversity=%s diversity_ceiling=%d "
+            "raw_score=%d final_score=%d",
             ticker,
             moat_key,
             indicator_count,
             source_count,
             confidence,
             ceiling,
+            diversity_level,
+            diversity_ceiling,
+            score,
             final_score,
         )
 

@@ -146,6 +146,52 @@ class SECEdgarFetcher:
             log.error("[sec_fetcher][download_error] ticker=%s error=%s", ticker, e)
             return []
 
+    # ── Section extraction helpers ────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_item_section(
+        text: str,
+        start_pattern: str,
+        end_pattern: str,
+        max_chars: int = 8000,
+    ) -> Optional[str]:
+        """
+        Extract a named 10-K section using case-insensitive regex boundaries.
+
+        The start match is included in the returned text; the end match is
+        excluded.  Searching for the end boundary begins immediately after
+        the end of the start match to prevent self-overlap (e.g. the Item 1A
+        start pattern `item\s+1a` would otherwise match inside its own end
+        boundary search for `item\s+1[\.\s]`).
+
+        Args:
+            text:          Full filing text (original case, not uppercased).
+            start_pattern: Regex marking the beginning of the section.
+            end_pattern:   Regex marking where the section ends (exclusive).
+            max_chars:     Hard truncation limit for the extracted text.
+
+        Returns:
+            Extracted section string, or None if the start pattern is not found.
+        """
+        start_match = _re.search(start_pattern, text, _re.IGNORECASE)
+        if not start_match:
+            return None
+
+        start_pos  = start_match.start()
+        search_from = start_pos + len(start_match.group())
+
+        end_match = _re.search(end_pattern, text[search_from:], _re.IGNORECASE)
+        end_pos   = (search_from + end_match.start()) if end_match else len(text)
+
+        section = text[start_pos:end_pos].strip()
+        if not section:
+            return None
+
+        if len(section) > max_chars:
+            section = section[:max_chars] + "\n\n[Section truncated at 8 000 characters]"
+
+        return section
+
     # ── Single-filing parser ───────────────────────────────────────────────────
 
     def _fetch_single_10k(
@@ -167,7 +213,7 @@ class SECEdgarFetcher:
             ticker, year, len(full_text),
         )
 
-        sections = {
+        raw_sections: Dict[str, Optional[str]] = {
             "business": self.extract_section(
                 full_text,
                 [r"ITEM\s+1[\.\:\-\s]+BUSINESS", r"ITEM\s+1\b(?!\s*A)"],
@@ -183,8 +229,39 @@ class SECEdgarFetcher:
                 [r"ITEM\s+7[\.\:\-\s]+MANAGEMENT", r"ITEM\s+7\b(?!\s*A)"],
                 [r"ITEM\s+7A", r"ITEM\s+8\b"],
             ),
+            # Item 1 and Item 1A extracted with the exact boundary patterns
+            # requested: case-insensitive, [\.\s] separator, 8 000-char cap.
+            # These use _extract_item_section (re.IGNORECASE on original text)
+            # rather than extract_section (UPPERCASE text) so the patterns
+            # match more consistently across filing formats.
+            "item1": self._extract_item_section(
+                full_text,
+                start_pattern=r"item\s+1[\.\s]",
+                end_pattern=r"item\s+1a[\.\s]",
+                max_chars=8000,
+            ),
+            "item1a": self._extract_item_section(
+                full_text,
+                start_pattern=r"item\s+1a[\.\s]",
+                end_pattern=r"item\s+2[\.\s]",
+                max_chars=8000,
+            ),
         }
-        sections = {k: _sanitize_for_prompt(v) for k, v in sections.items() if v}
+
+        # DEBUG: log hit/miss for every section key
+        for key, text_val in raw_sections.items():
+            if text_val:
+                log.debug(
+                    "[sec_fetcher][section_ok] ticker=%s year=%s section=%s chars=%d",
+                    ticker, year, key, len(text_val),
+                )
+            else:
+                log.debug(
+                    "[sec_fetcher][section_miss] ticker=%s year=%s section=%s",
+                    ticker, year, key,
+                )
+
+        sections = {k: _sanitize_for_prompt(v) for k, v in raw_sections.items() if v}
 
         filing_date = (
             file_path.parent.name.split("-")[0]
@@ -356,9 +433,11 @@ def fetch_and_prepare_for_rag(ticker: str, limit: int = 3) -> List[Dict]:
         return []
 
     section_names = {
-        "business": "Business Description",
+        "business":     "Business Description",
         "risk_factors": "Risk Factors",
-        "mda": "Management Discussion & Analysis",
+        "mda":          "Management Discussion & Analysis",
+        "item1":        "Item 1 — Business",
+        "item1a":       "Item 1A — Risk Factors",
     }
 
     documents = []
