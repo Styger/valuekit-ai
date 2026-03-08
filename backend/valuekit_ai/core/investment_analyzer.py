@@ -291,6 +291,7 @@ class IntegratedAnalyzer:
         growth_rate: float = 0.10,
         load_sec_data: bool = False,
         load_earnings_data: bool = False,
+        load_news_data: bool = False,
         config: Optional[AnalysisConfig] = None,
     ) -> InvestmentDecision:
         """
@@ -305,6 +306,7 @@ class IntegratedAnalyzer:
             growth_rate: CAGR growth estimate (decimal, e.g. 0.12)
             load_sec_data: Reload SEC 10-K data
             load_earnings_data: Load earnings transcripts
+            load_news_data: Load recent Yahoo Finance news articles
             config: AnalysisConfig (controls which components run)
 
         Returns:
@@ -312,8 +314,8 @@ class IntegratedAnalyzer:
         """
         log.info(
             "[investment_analyzer][start] ticker=%s pipeline_version=%s "
-            "load_sec=%s load_earnings=%s",
-            ticker, PIPELINE_VERSION, load_sec_data, load_earnings_data,
+            "load_sec=%s load_earnings=%s load_news=%s",
+            ticker, PIPELINE_VERSION, load_sec_data, load_earnings_data, load_news_data,
         )
 
         if load_sec_data:
@@ -331,6 +333,16 @@ class IntegratedAnalyzer:
             if earnings_result.get("status") != "success":
                 log.warning(
                     "[investment_analyzer][earnings_load_failed] ticker=%s", ticker
+                )
+
+        if load_news_data:
+            from backend.valuekit_ai.data_pipeline.load_sec_data import (
+                load_news_data as _load_news,
+            )
+            news_result = _load_news(ticker)
+            if news_result.get("status") != "success":
+                log.warning(
+                    "[investment_analyzer][news_load_failed] ticker=%s", ticker
                 )
 
         # Calculate the three scores

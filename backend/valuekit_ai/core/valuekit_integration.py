@@ -105,6 +105,7 @@ class ValueKitAnalyzer:
         margin_of_safety: float = 0.50,
         load_sec_data: bool = False,
         load_earnings_data: bool = False,
+        load_news_data: bool = False,
         config: Optional[AnalysisConfig] = None,
     ) -> Dict:
         """
@@ -119,6 +120,7 @@ class ValueKitAnalyzer:
             margin_of_safety: Safety margin percentage
             load_sec_data: Reload SEC filings
             load_earnings_data: Load earnings transcripts
+            load_news_data: Load recent Yahoo Finance news articles
             config: AnalysisConfig (controls which components run)
 
         Returns:
@@ -245,6 +247,7 @@ class ValueKitAnalyzer:
                 growth_rate=growth_rate or 0.10,
                 load_sec_data=load_sec_data,
                 load_earnings_data=load_earnings_data,
+                load_news_data=load_news_data,
                 config=config,
             )
 

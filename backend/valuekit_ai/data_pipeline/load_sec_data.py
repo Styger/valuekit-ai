@@ -3,6 +3,7 @@ Integration: Load SEC Edgar data into RAG system
 """
 
 from backend.valuekit_ai.data_pipeline.sec_fetcher import fetch_and_prepare_for_rag
+from backend.valuekit_ai.data_pipeline.yahoo_news_fetcher import fetch_yahoo_news
 from backend.valuekit_ai.rag.rag_service import get_rag_service
 from langchain_core.documents import Document
 
@@ -74,6 +75,60 @@ def load_company_data(ticker: str, years: int = 3) -> dict:
             "status": "success",
             "ticker": ticker,
             "years_loaded": loaded_years,
+            "documents_added": result["documents_added"],
+            "chunks_created": result["chunks_created"],
+            "total_kb_size": stats["count"],
+        }
+    else:
+        return {"status": "error", "message": result.get("error", "Unknown error")}
+
+
+def load_news_data(ticker: str, max_articles: int = 10) -> dict:
+    """
+    Fetch recent Yahoo Finance news articles for `ticker` and load them into
+    the RAG vector store.
+
+    Args:
+        ticker:       Stock ticker
+        max_articles: Maximum number of articles to load (default 10)
+
+    Returns:
+        Status dict with keys: status, ticker, documents_added, chunks_created,
+        total_kb_size
+    """
+    log.info("[load_sec_data][news_start] ticker=%s max_articles=%d", ticker, max_articles)
+
+    raw_docs = fetch_yahoo_news(ticker, max_articles=max_articles)
+
+    if not raw_docs:
+        log.warning("[load_sec_data][news_no_docs] ticker=%s", ticker)
+        return {"status": "error", "message": f"No news articles found for {ticker}"}
+
+    log.info(
+        "[load_sec_data][news_fetched] ticker=%s articles=%d",
+        ticker, len(raw_docs),
+    )
+
+    documents = [
+        Document(page_content=doc["text"], metadata=doc["metadata"])
+        for doc in raw_docs
+    ]
+
+    rag = get_rag_service()
+    result = rag.add_financial_documents(documents)
+
+    if result["status"] == "success":
+        stats = rag.get_knowledge_base_stats()
+        log.info(
+            "[load_sec_data][news_complete] ticker=%s documents=%d chunks=%d kb_total=%d",
+            ticker,
+            result["documents_added"],
+            result["chunks_created"],
+            stats["count"],
+        )
+        return {
+            "status": "success",
+            "ticker": ticker,
             "documents_added": result["documents_added"],
             "chunks_created": result["chunks_created"],
             "total_kb_size": stats["count"],

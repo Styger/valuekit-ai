@@ -1148,6 +1148,7 @@ def _page_moat():
         load_earnings = st.checkbox(
             "Load Earnings Transcripts", value=False, key="moat_earn"
         )
+        load_news = st.checkbox("Load News Articles", value=False, key="moat_news")
 
     st.markdown("**Moat Types to Assess**")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -1180,11 +1181,12 @@ def _page_moat():
         )
 
         log.info(
-            "[app][moat_start] ticker=%s year=%d load_sec=%s load_earnings=%s pipeline_version=%s",
+            "[app][moat_start] ticker=%s year=%d load_sec=%s load_earnings=%s load_news=%s pipeline_version=%s",
             ticker,
             year,
             load_sec,
             load_earnings,
+            load_news,
             PIPELINE_VERSION,
         )
 
@@ -1194,9 +1196,9 @@ def _page_moat():
             try:
                 analyzer = ValueKitAnalyzer()
 
-                # Business Model (only when SEC/earnings data is loaded)
+                # Business Model (only when SEC/earnings/news data is loaded)
                 bm_result = None
-                if load_sec or load_earnings:
+                if load_sec or load_earnings or load_news:
                     bm_result = (
                         analyzer.ai_analyzer.moat_analyzer.analyze_business_model(ticker)
                     )
@@ -1210,6 +1212,7 @@ def _page_moat():
                     margin_of_safety=0.50,
                     load_sec_data=load_sec,
                     load_earnings_data=load_earnings,
+                    load_news_data=load_news,
                     config=config,
                 )
 
