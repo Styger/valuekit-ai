@@ -274,38 +274,23 @@ class ValueKitAnalyzer:
         mos_result: Optional[Dict],
         ai_decision,
     ) -> str:
-        """Combine MOS and AI recommendations into final output"""
+        """
+        Returns the final recommendation string.
+        Delegates entirely to ai_decision.decision — the single authoritative
+        decision from IntegratedAnalyzer._make_decision().
+        No independent logic here to avoid contradictions.
+        """
         if not ai_decision:
             if mos_result:
                 return mos_result.get("Investment Recommendation", "N/A")
             return "Insufficient data for recommendation"
 
-        moat_strength = ai_decision.moat_analysis.moat_strength
-        ai_rec = ai_decision.decision
-        mos_rec = mos_result.get("Investment Recommendation", "") if mos_result else ""
+        decision = ai_decision.decision
+        score = ai_decision.overall_score
+        moat = ai_decision.moat_analysis.moat_strength
+        flags = len(ai_decision.moat_analysis.red_flags)
 
-        mos_upper = mos_rec.upper()
-        ai_upper = ai_rec.upper()
-
-        if "AVOID" in mos_upper or "OVERVALUED" in mos_upper:
-            if moat_strength == "Wide":
-                return "HOLD - Quality company but wait for better entry price"
-            return "PASS - Overvalued"
-
-        if "STRONG BUY" in mos_upper:
-            if "BUY" in ai_upper:
-                return "STRONG BUY - Excellent value with quality moat"
-            return "HOLD - Attractive valuation but weak moat"
-
-        if "BUY" in mos_upper and "STRONG BUY" in ai_upper:
-            return "STRONG BUY - Excellent quantitative and qualitative"
-        if "BUY" in mos_upper and "BUY" in ai_upper:
-            return "BUY - Good value with solid moat"
-        if "BUY" in mos_upper and "HOLD" in ai_upper:
-            return "BUY (with caution) - Good value but moat concerns"
-        if "BUY" in mos_upper and "PASS" in ai_upper:
-            return "HOLD - Good value but significant red flags"
-        if "HOLD" in mos_upper:
-            return "HOLD - Fairly valued, monitor"
-
-        return f"See details: MOS={mos_rec}, AI={ai_rec}"
+        return (
+            f"{decision} — Combined Score: {score}/100 | "
+            f"Moat: {moat} | Red Flags: {flags}"
+        )

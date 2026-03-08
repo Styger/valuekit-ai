@@ -384,13 +384,7 @@ class MoatAnalyzer:
 
         max_possible = len(moats) * 10
         score_pct = (total_score / max_possible * 100) if max_possible > 0 else 0
-
-        if score_pct >= 60:
-            moat_strength = "Wide"
-        elif score_pct >= 35:
-            moat_strength = "Narrow"
-        else:
-            moat_strength = "None"
+        moat_strength = self._moat_strength_from_score(int(score_pct))
 
         competitive_position = self._assess_competitive_position(moats, red_flags)
         recommendation = self._generate_recommendation(
@@ -418,6 +412,19 @@ class MoatAnalyzer:
             recommendation=recommendation,
         )
 
+    @staticmethod
+    def _moat_strength_from_score(moat_score_normalized: int) -> str:
+        """
+        Single authoritative mapping from moat score (0-100) to moat strength.
+        Used in analyze_moats() — moat_strength is NEVER derived from combined_score.
+        """
+        if moat_score_normalized >= 65:
+            return "Wide"
+        elif moat_score_normalized >= 40:
+            return "Narrow"
+        else:
+            return "None"
+
     def _assess_competitive_position(
         self, moats: Dict[str, MoatScore], red_flags: List[str]
     ) -> str:
@@ -434,13 +441,15 @@ class MoatAnalyzer:
     def _generate_recommendation(
         self, overall_score: int, moat_strength: str, red_flags: List[str]
     ) -> str:
-        if moat_strength == "Wide" and len(red_flags) == 0:
-            return "STRONG BUY - Wide moat with no significant red flags"
-        elif moat_strength == "Wide":
-            return "BUY - Wide moat, monitor identified risks"
-        elif moat_strength == "Narrow" and len(red_flags) <= 1:
-            return "HOLD - Narrow moat, requires margin of safety"
+        """
+        Returns a moat quality description only.
+        Investment decision (BUY/HOLD/PASS) is made exclusively by
+        IntegratedAnalyzer._make_decision() based on combined_score.
+        """
+        flag_note = f", {len(red_flags)} risk(s) to monitor" if red_flags else ""
+        if moat_strength == "Wide":
+            return f"Wide economic moat — strong durable competitive advantages{flag_note}"
         elif moat_strength == "Narrow":
-            return "PASS - Narrow moat with multiple red flags"
+            return f"Narrow economic moat — moderate competitive advantages{flag_note}"
         else:
-            return "PASS - No identifiable economic moat"
+            return f"No identifiable economic moat{flag_note}"
