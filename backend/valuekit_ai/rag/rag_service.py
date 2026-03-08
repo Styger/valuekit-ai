@@ -125,7 +125,11 @@ class RAGService:
                     {
                         "content": doc.page_content[:200] + "...",
                         "metadata": doc.metadata,
-                        "relevance_score": float(score),
+                        # ChromaDB returns L2 distance (lower = better, range [0, 2] for
+                        # unit-normalized Voyage AI vectors).  Convert to cosine similarity
+                        # using the exact identity for unit vectors:
+                        #   cosine_sim = 1 - d² / 2  →  clipped to [0, 1]
+                        "relevance_score": max(0.0, 1.0 - float(score) ** 2 / 2.0),
                     }
                     for doc, score in retrieved_docs
                 ],

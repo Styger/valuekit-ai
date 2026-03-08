@@ -56,6 +56,8 @@ class InvestmentDecision:
             "moat_strength": self.moat_analysis.moat_strength,
             "moat_score": self.moat_analysis.overall_score,
             "red_flags": self.moat_analysis.red_flags,
+            "avg_relevance_score": self.moat_analysis.avg_relevance_score,
+            "total_sources_used": self.moat_analysis.total_sources_used,
             "quantitative_metrics": self.quantitative_metrics,
             "pipeline_version": PIPELINE_VERSION,
         }

@@ -6,7 +6,8 @@
       "Bash(pip show:*)",
       "Bash(pip index:*)",
       "Bash(where streamlit:*)",
-      "Bash(/c/Python312/python.exe:*)"
+      "Bash(/c/Python312/python.exe:*)",
+      "Bash(ls:*)"
     ]
   }
 }

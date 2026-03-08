@@ -28,6 +28,8 @@ class MoatScore:
     score: int  # 0-10
     evidence: List[str]
     confidence: str  # "High", "Medium", "Low"
+    sources_used: int = 0
+    avg_relevance: float = 0.0
 
 
 @dataclass
@@ -41,6 +43,8 @@ class MoatAnalysis:
     red_flags: List[str]
     competitive_position: str
     recommendation: str
+    avg_relevance_score: float = 0.0  # mean relevance across all moat RAG calls
+    total_sources_used: int = 0       # total unique source chunks retrieved
 
 
 class MoatAnalyzer:
@@ -196,15 +200,39 @@ class MoatAnalyzer:
         )
 
         if result["status"] == "success":
+            sources = result.get("sources", [])
+            # Ticker guard: verify at least one retrieved chunk belongs to this ticker.
+            # Without this, ChromaDB returns the closest chunks from *other* indexed
+            # companies when the requested ticker has no documents loaded.
+            matching = [
+                s for s in sources
+                if s.get("metadata", {}).get("ticker", "").upper() == ticker.upper()
+            ]
+            if not matching:
+                log.warning(
+                    "[moat_analyzer][business_model_wrong_ticker] ticker=%s "
+                    "sources=%d matching=0",
+                    ticker, len(sources),
+                )
+                return {
+                    "status": "error",
+                    "description": (
+                        f"No documents indexed for {ticker}. "
+                        "Load SEC filings first."
+                    ),
+                    "sources_used": 0,
+                }
+
             log.info(
-                "[moat_analyzer][business_model_ok] ticker=%s chars=%d",
+                "[moat_analyzer][business_model_ok] ticker=%s chars=%d sources=%d",
                 ticker,
                 len(result["analysis"]),
+                len(matching),
             )
             return {
                 "status": "success",
                 "description": result["analysis"],
-                "sources_used": len(result.get("sources", [])),
+                "sources_used": len(matching),
             }
         else:
             log.warning("[moat_analyzer][business_model_failed] ticker=%s", ticker)
@@ -246,6 +274,8 @@ class MoatAnalyzer:
                 score=0,
                 evidence=["Analysis failed"],
                 confidence="Low",
+                sources_used=0,
+                avg_relevance=0.0,
             )
 
         analysis_text = result["analysis"].lower()
@@ -254,7 +284,34 @@ class MoatAnalyzer:
         )
 
         evidence = self._extract_evidence(result["analysis"], moat_config["indicators"])
-        source_count = len(result.get("sources", []))
+        all_sources = result.get("sources", [])
+
+        # Ticker guard: only count chunks that actually belong to this ticker.
+        # ChromaDB always returns k results regardless of relevance, so without this
+        # check an unindexed ticker gets scored on another company's documents.
+        sources = [
+            s for s in all_sources
+            if s.get("metadata", {}).get("ticker", "").upper() == ticker.upper()
+        ]
+        if not sources:
+            log.warning(
+                "[moat_analyzer][no_ticker_docs] ticker=%s moat=%s — "
+                "no matching chunks, returning score=0",
+                ticker, moat_key,
+            )
+            return MoatScore(
+                name=moat_config["name"],
+                score=0,
+                evidence=["No documents indexed for this ticker"],
+                confidence="Low",
+                sources_used=0,
+                avg_relevance=0.0,
+            )
+
+        source_count = len(sources)
+        avg_relevance = (
+            sum(s.get("relevance_score", 0.0) for s in sources) / source_count
+        )
 
         # Score calculation
         base_score = min(10, (indicator_count / len(moat_config["indicators"])) * 20)
@@ -289,6 +346,8 @@ class MoatAnalyzer:
             score=final_score,
             evidence=evidence[:3],
             confidence=confidence,
+            sources_used=source_count,
+            avg_relevance=avg_relevance,
         )
 
     def _extract_evidence(self, analysis_text: str, indicators: List[str]) -> List[str]:
@@ -371,6 +430,8 @@ class MoatAnalyzer:
 
         moats = {}
         total_score = 0
+        relevance_samples: List[float] = []
+        total_sources = 0
 
         for moat_key in enabled_moats:
             if moat_key not in self.MOAT_TYPES:
@@ -379,6 +440,14 @@ class MoatAnalyzer:
             moat_score = self.analyze_single_moat(ticker, moat_key, moat_config)
             moats[moat_key] = moat_score
             total_score += moat_score.score
+            if moat_score.sources_used > 0:
+                relevance_samples.append(moat_score.avg_relevance)
+                total_sources += moat_score.sources_used
+
+        avg_relevance = (
+            sum(relevance_samples) / len(relevance_samples)
+            if relevance_samples else 0.0
+        )
 
         red_flags = self.detect_red_flags(ticker, enabled_rf)
 
@@ -410,6 +479,8 @@ class MoatAnalyzer:
             red_flags=red_flags,
             competitive_position=competitive_position,
             recommendation=recommendation,
+            avg_relevance_score=avg_relevance,
+            total_sources_used=total_sources,
         )
 
     @staticmethod

@@ -894,6 +894,23 @@ def _page_pbt():
 # ─── AI Moat Page ────────────────────────────────────────────────────────────
 
 
+def _get_data_quality_tier(avg_relevance: float, sources: int) -> dict:
+    """
+    Map RAG stats to a data quality tier for user-facing display.
+
+    Thresholds:
+      High   — avg_relevance ≥ 0.65 AND sources ≥ 5
+      Medium — avg_relevance ≥ 0.45 OR  sources ≥ 3
+      Low    — anything below Medium
+    """
+    if avg_relevance >= 0.65 and sources >= 5:
+        return {"level": "high",   "label": "High data quality",   "color": "success"}
+    elif avg_relevance >= 0.45 or sources >= 3:
+        return {"level": "medium", "label": "Medium data quality",  "color": "warning"}
+    else:
+        return {"level": "low",    "label": "Low data quality",     "color": "error"}
+
+
 def _page_moat():
     st.header("🤖 AI Moat Analysis")
     st.caption(
@@ -982,6 +999,34 @@ def _page_moat():
                     return
 
                 st.session_state["analysis_count"] += 1
+
+                # ── RAG Data Quality Indicator ────────────────────────────
+                avg_rel = ai.get("avg_relevance_score", 0.0)
+                total_src = ai.get("total_sources_used", 0)
+                tier = _get_data_quality_tier(avg_rel, total_src)
+
+                _QUALITY_MSG = {
+                    "high": (
+                        f"**{tier['label']}** — {total_src} relevant document sections "
+                        f"analysed (avg. relevance {avg_rel:.2f})."
+                    ),
+                    "medium": (
+                        f"**{tier['label']}** — {total_src} document section(s) analysed "
+                        f"(avg. relevance {avg_rel:.2f}). Result may be incomplete."
+                    ),
+                    "low": (
+                        f"**{tier['label']}** — Only {total_src} document section(s) found "
+                        f"(avg. relevance {avg_rel:.2f}). "
+                        "Enable 'Load SEC Filings' or load more data for a better result."
+                    ),
+                }
+                msg = _QUALITY_MSG[tier["level"]]
+                if tier["level"] == "high":
+                    st.success(msg)
+                elif tier["level"] == "medium":
+                    st.warning(msg)
+                else:
+                    st.error(msg)
 
                 # ── Business Model expander ───────────────────────────────
                 if bm_result and bm_result.get("status") == "success":
