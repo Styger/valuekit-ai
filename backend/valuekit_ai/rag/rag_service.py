@@ -78,14 +78,20 @@ class RAGService:
         query: str,
         quantitative_data: Optional[Dict[str, Any]] = None,
         max_tokens: int = 4096,
+        scoring_rules: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Perform RAG-enhanced analysis
 
         Args:
-            query: Analysis query
+            query: Analysis query (used for both retrieval embedding and prompt)
             quantitative_data: Dict with MOS, ROIC, etc.
             max_tokens: Maximum response length
+            scoring_rules: Optional mandatory scoring instructions injected as a
+                           distinct ``SCORING RULES (MANDATORY):`` section in the
+                           prompt, between USER QUERY and ANALYSIS INSTRUCTIONS.
+                           Kept separate from ``query`` so retrieval embedding
+                           is not diluted by output-format instructions.
 
         Returns:
             Dict with analysis, sources, and metadata
@@ -121,7 +127,7 @@ class RAGService:
         # Cap context to TOP_K_RESULTS to keep prompt size bounded
         retrieved_docs = unique_docs[: self.config.TOP_K_RESULTS]
         context = self._format_context([doc for doc, score in retrieved_docs])
-        prompt = self._build_analysis_prompt(query, context, quantitative_data)
+        prompt = self._build_analysis_prompt(query, context, quantitative_data, scoring_rules)
 
         try:
             message = self.client.messages.create(
@@ -170,8 +176,19 @@ class RAGService:
         query: str,
         context: str,
         quantitative_data: Optional[Dict[str, Any]],
+        scoring_rules: Optional[str] = None,
     ) -> str:
-        """Build WIPRO-compliant analysis prompt"""
+        """Build WIPRO-compliant analysis prompt.
+
+        Args:
+            query:            The analysis question (retrieval query, also shown to LLM).
+            context:          Formatted retrieved document excerpts.
+            quantitative_data: Structured metrics forwarded from the caller.
+            scoring_rules:    When provided, injected as a ``SCORING RULES (MANDATORY):``
+                              section between USER QUERY and ANALYSIS INSTRUCTIONS so
+                              that output-format constraints are clearly separated from
+                              the factual query and not mixed into the retrieval embedding.
+        """
         n_sources = context.count("Document ")
 
         source_warning = ""
@@ -180,6 +197,12 @@ class RAGService:
                 f"\nThis assessment is based on {n_sources} retrieved document "
                 f"sections and should be interpreted with caution."
             )
+
+        scoring_rules_section = (
+            f"\nSCORING RULES (MANDATORY):\n{scoring_rules.strip()}\n"
+            if scoring_rules
+            else ""
+        )
 
         return f"""You are a quantitative value investing analyst conducting a scientific investment analysis.
 
@@ -191,7 +214,7 @@ RETRIEVED DOCUMENT EXCERPTS (QUALITATIVE CONTEXT):
 
 USER QUERY:
 {query}
-
+{scoring_rules_section}
 ANALYSIS INSTRUCTIONS:
 1. Answer using ONLY information present in the retrieved documents or provided quantitative metrics.
 2. Distinguish clearly between observed data, calculated metrics, and model-generated interpretations.

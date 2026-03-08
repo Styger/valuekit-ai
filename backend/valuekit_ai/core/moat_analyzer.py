@@ -4,10 +4,11 @@ Analyzes competitive advantages from SEC 10-K filings using RAG
 """
 
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 root_dir = Path(__file__).resolve().parent.parent.parent.parent
 if str(root_dir) not in sys.path:
@@ -18,6 +19,109 @@ from backend.valuekit_ai.rag.rag_service import get_rag_service
 from backend.valuekit_ai.config.analysis_config import AnalysisConfig
 
 log = logging.getLogger(__name__)
+
+# ── Two-step evidence-level scoring ──────────────────────────────────────────
+#
+# The LLM is instructed to classify evidence strength with a structured tag.
+# Python code maps that tag to a numeric score (see _EVIDENCE_LEVEL_SCORES and
+# _parse_evidence_level below).  Free-form numeric score generation is removed
+# from the prompt entirely to reduce LLM calibration variance.
+
+_MOAT_SCORING_INSTRUCTION = (
+    "Assess the evidence for this specific moat type using the following two-step process:\n"
+    "\n"
+    "Step 1 — Evidence classification: Based solely on the retrieved documents, "
+    "classify the strength of evidence as EXACTLY ONE of the following labels "
+    "and output it on its own line in this exact format:\n"
+    "  EVIDENCE_LEVEL: NONE      — no relevant evidence found in the documents\n"
+    "  EVIDENCE_LEVEL: LIMITED   — indirect mentions or weak signals only\n"
+    "  EVIDENCE_LEVEL: MODERATE  — clear but non-quantified evidence of the moat mechanism\n"
+    "  EVIDENCE_LEVEL: STRONG    — direct quantitative or qualitative evidence of the moat mechanism\n"
+    "\n"
+    "MANDATORY KEYWORD RULE: If your analysis text contains ANY of the following "
+    "phrases, the EVIDENCE_LEVEL MUST be NONE or LIMITED — never MODERATE or STRONG:\n"
+    "  • insufficient evidence\n"
+    "  • limited evidence\n"
+    "  • limited direct evidence\n"
+    "  • no evidence\n"
+    "  • insufficient information\n"
+    "  • does not contain\n"
+    "\n"
+    "Step 2 — Qualitative analysis: Describe the evidence (or lack thereof) found "
+    "in the retrieved documents. Do NOT output a numeric score — the numeric score "
+    "is computed from EVIDENCE_LEVEL by the system."
+)
+
+# Upper bound of each evidence-level score range.
+# Confidence and diversity ceilings (applied in Python) cap downward from here.
+#   NONE     → 1–2  (upper bound 2)
+#   LIMITED  → 3–4  (upper bound 4)
+#   MODERATE → 5–7  (upper bound 7)
+#   STRONG   → 8–10 (upper bound 10)
+_EVIDENCE_LEVEL_SCORES: Dict[str, int] = {
+    "NONE": 2,
+    "LIMITED": 4,
+    "MODERATE": 7,
+    "STRONG": 10,
+}
+
+
+# Phrases that signal absent or weak evidence.  If any appear in the analysis
+# text, the evidence level is capped at LIMITED regardless of what the LLM tag
+# says.  This is a deterministic Python guard — prompt instructions alone are
+# not reliable enough to prevent the LLM from tagging MODERATE/STRONG while
+# simultaneously using hedging language that contradicts that rating.
+_WEAK_EVIDENCE_PHRASES = (
+    "insufficient evidence",
+    "limited evidence",
+    "limited direct evidence",
+    "no evidence",
+    "insufficient information",
+    "no information",
+    "does not contain",
+    "cannot be assessed",
+)
+
+
+def _parse_evidence_level(analysis_text: str) -> Tuple[str, int]:
+    """
+    Extract the ``EVIDENCE_LEVEL: <LEVEL>`` tag from the LLM response,
+    enforce the keyword override rule, and return ``(level_str, score)``.
+
+    Override rule: if the analysis text contains any phrase from
+    ``_WEAK_EVIDENCE_PHRASES`` the level is capped at LIMITED (≤ 4),
+    even if the LLM tagged MODERATE or STRONG.
+
+    Falls back to ``("LIMITED", 4)`` with a warning when the tag is absent.
+    """
+    text_lower = analysis_text.lower()
+
+    match = re.search(
+        r"EVIDENCE_LEVEL:\s*(NONE|LIMITED|MODERATE|STRONG)",
+        analysis_text,
+        re.IGNORECASE,
+    )
+    level = match.group(1).upper() if match else None
+
+    if level is None:
+        log.warning(
+            "[moat_analyzer][evidence_level_missing] tag not found — defaulting to LIMITED/4"
+        )
+        level = "LIMITED"
+
+    # Python-side enforcement of the keyword rule.
+    if level in ("MODERATE", "STRONG"):
+        triggered = [p for p in _WEAK_EVIDENCE_PHRASES if p in text_lower]
+        if triggered:
+            log.warning(
+                "[moat_analyzer][evidence_level_override] LLM tagged %s but weak-evidence "
+                "phrases detected %s — overriding to LIMITED",
+                level,
+                triggered,
+            )
+            level = "LIMITED"
+
+    return level, _EVIDENCE_LEVEL_SCORES[level]
 
 
 @dataclass
@@ -44,7 +148,7 @@ class MoatAnalysis:
     competitive_position: str
     recommendation: str
     avg_relevance_score: float = 0.0  # mean relevance across all moat RAG calls
-    total_sources_used: int = 0       # total unique source chunks retrieved
+    total_sources_used: int = 0  # total unique source chunks retrieved
 
 
 class MoatAnalyzer:
@@ -205,20 +309,21 @@ class MoatAnalyzer:
             # Without this, ChromaDB returns the closest chunks from *other* indexed
             # companies when the requested ticker has no documents loaded.
             matching = [
-                s for s in sources
+                s
+                for s in sources
                 if s.get("metadata", {}).get("ticker", "").upper() == ticker.upper()
             ]
             if not matching:
                 log.warning(
                     "[moat_analyzer][business_model_wrong_ticker] ticker=%s "
                     "sources=%d matching=0",
-                    ticker, len(sources),
+                    ticker,
+                    len(sources),
                 )
                 return {
                     "status": "error",
                     "description": (
-                        f"No documents indexed for {ticker}. "
-                        "Load SEC filings first."
+                        f"No documents indexed for {ticker}. Load SEC filings first."
                     ),
                     "sources_used": 0,
                 }
@@ -263,6 +368,7 @@ class MoatAnalyzer:
         result = self.rag.analyze_with_rag(
             query=query,
             quantitative_data={"ticker": ticker},
+            scoring_rules=_MOAT_SCORING_INSTRUCTION,
         )
 
         if result["status"] != "success":
@@ -278,26 +384,24 @@ class MoatAnalyzer:
                 avg_relevance=0.0,
             )
 
-        analysis_text = result["analysis"].lower()
-        indicator_count = sum(
-            1 for ind in moat_config["indicators"] if ind.lower() in analysis_text
-        )
-
-        evidence = self._extract_evidence(result["analysis"], moat_config["indicators"])
+        analysis_text = result["analysis"]
+        evidence = self._extract_evidence(analysis_text, moat_config["indicators"])
         all_sources = result.get("sources", [])
 
         # Ticker guard: only count chunks that actually belong to this ticker.
         # ChromaDB always returns k results regardless of relevance, so without this
         # check an unindexed ticker gets scored on another company's documents.
         sources = [
-            s for s in all_sources
+            s
+            for s in all_sources
             if s.get("metadata", {}).get("ticker", "").upper() == ticker.upper()
         ]
         if not sources:
             log.warning(
                 "[moat_analyzer][no_ticker_docs] ticker=%s moat=%s — "
                 "no matching chunks, returning score=0",
-                ticker, moat_key,
+                ticker,
+                moat_key,
             )
             return MoatScore(
                 name=moat_config["name"],
@@ -327,9 +431,7 @@ class MoatAnalyzer:
         }
         unique_doc_types: set = {origin[0] for origin in unique_origins}
         n_doc_types = len(unique_doc_types)
-        has_earnings = any(
-            "earnings" in dt.lower() for dt in unique_doc_types if dt
-        )
+        has_earnings = any("earnings" in dt.lower() for dt in unique_doc_types if dt)
 
         # Tier definitions (per spec):
         #   High   → 3+ distinct doc types AND includes earnings → cap 10
@@ -346,42 +448,53 @@ class MoatAnalyzer:
             "[moat_analyzer][diversity] ticker=%s moat=%s "
             "unique_origins=%d unique_doc_types=%s has_earnings=%s "
             "level=%s diversity_ceiling=%d",
-            ticker, moat_key,
-            len(unique_origins), sorted(unique_doc_types), has_earnings,
-            diversity_level, diversity_ceiling,
+            ticker,
+            moat_key,
+            len(unique_origins),
+            sorted(unique_doc_types),
+            has_earnings,
+            diversity_level,
+            diversity_ceiling,
         )
 
-        # ── Score calculation ─────────────────────────────────────────────────
-        base_score = min(10, (indicator_count / len(moat_config["indicators"])) * 20)
-        source_bonus = min(2, source_count / 3)
-        evidence_bonus = min(2, len(evidence))
-        score = int(min(10, base_score + source_bonus + evidence_bonus))
+        # ── Evidence level → base score (LLM structured output) ─────────────
+        evidence_level, evidence_score = _parse_evidence_level(analysis_text)
+        log.debug(
+            "[moat_analyzer][evidence_level] ticker=%s moat=%s level=%s evidence_score=%d",
+            ticker,
+            moat_key,
+            evidence_level,
+            evidence_score,
+        )
 
-        # Confidence ceiling based on source count and indicators
-        if source_count >= 3 and indicator_count >= 3:
+        # ── Confidence ceiling: retrieval quality gate (source count only) ───
+        # indicator_count is removed — evidence strength is now expressed by
+        # the structured EVIDENCE_LEVEL tag, not keyword frequency in the text.
+        if source_count >= 3:
             confidence, ceiling = "High", 10
-        elif source_count >= 2 and indicator_count >= 2:
+        elif source_count >= 2:
             confidence, ceiling = "Medium", 8
         else:
             confidence, ceiling = "Low", 5
 
-        # Apply both ceilings: confidence gates quality of evidence;
-        # diversity gates breadth of source types.  Both must be satisfied.
-        final_score = min(score, ceiling, diversity_ceiling)
+        # ── Apply both ceilings ───────────────────────────────────────────────
+        # confidence gates retrieval quality; diversity gates source breadth.
+        # evidence_score is the LLM-assessed strength; ceilings cap downward.
+        final_score = min(evidence_score, ceiling, diversity_ceiling)
 
         log.debug(
-            "[moat_analyzer][score] ticker=%s moat=%s indicators=%d sources=%d "
-            "confidence=%s ceiling=%d diversity=%s diversity_ceiling=%d "
-            "raw_score=%d final_score=%d",
+            "[moat_analyzer][score] ticker=%s moat=%s evidence_level=%s "
+            "evidence_score=%d sources=%d confidence=%s ceiling=%d "
+            "diversity=%s diversity_ceiling=%d final_score=%d",
             ticker,
             moat_key,
-            indicator_count,
+            evidence_level,
+            evidence_score,
             source_count,
             confidence,
             ceiling,
             diversity_level,
             diversity_ceiling,
-            score,
             final_score,
         )
 
@@ -493,7 +606,8 @@ class MoatAnalyzer:
 
         avg_relevance = (
             sum(relevance_samples) / len(relevance_samples)
-            if relevance_samples else 0.0
+            if relevance_samples
+            else 0.0
         )
 
         red_flags = self.detect_red_flags(ticker, enabled_rf)
@@ -566,7 +680,9 @@ class MoatAnalyzer:
         """
         flag_note = f", {len(red_flags)} risk(s) to monitor" if red_flags else ""
         if moat_strength == "Wide":
-            return f"Wide economic moat — strong durable competitive advantages{flag_note}"
+            return (
+                f"Wide economic moat — strong durable competitive advantages{flag_note}"
+            )
         elif moat_strength == "Narrow":
             return f"Narrow economic moat — moderate competitive advantages{flag_note}"
         else:
