@@ -24,9 +24,10 @@ def calculate_profitability_metrics_from_ticker(ticker: str, year: int) -> Dict:
     Returns:
         Dict with profitability metrics (pure numbers, no text/ratings)
     """
-    # Fetch Balance Sheet and Income Statement
+    # Fetch Balance Sheet, Income Statement and Key Metrics
     balance_sheet = fmp_api.get_balance_sheet(ticker, limit=20)
     income_statement = fmp_api.get_income_statement(ticker, limit=20)
+    key_metrics_data = fmp_api.get_key_metrics(ticker, limit=20)
 
     # Find data for the specified year
     def get_by_year(data, target_year):
@@ -37,6 +38,7 @@ def calculate_profitability_metrics_from_ticker(ticker: str, year: int) -> Dict:
 
     bs_data = get_by_year(balance_sheet, year)
     is_data = get_by_year(income_statement, year)
+    km_data = get_by_year(key_metrics_data, year)
 
     # Extract Balance Sheet values
     total_assets = bs_data.get("totalAssets", 0)
@@ -76,6 +78,9 @@ def calculate_profitability_metrics_from_ticker(ticker: str, year: int) -> Dict:
     # Calculate Efficiency
     asset_turnover = revenue / total_assets if total_assets > 0 else None
 
+    # FCF Yield from FMP key metrics (FCF / Market Cap, as decimal)
+    fcf_yield = km_data.get("fcfYield")
+
     # Return pure data
     result = {
         "ticker": ticker.upper(),
@@ -93,6 +98,7 @@ def calculate_profitability_metrics_from_ticker(ticker: str, year: int) -> Dict:
         "operating_margin": operating_margin,
         "net_margin": net_margin,
         "asset_turnover": asset_turnover,
+        "fcf_yield": fcf_yield,
     }
 
     log.info(f"Profitability Analysis Result: {result}")

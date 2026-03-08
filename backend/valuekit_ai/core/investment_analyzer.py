@@ -1,13 +1,18 @@
 """
 Integrated Investment Analyzer
-Combines quantitative metrics with moat analysis for final decision
+Combines quantitative metrics with moat analysis for final decision.
+
+3-Score Model:
+  Quality Score   (40%) — ROIC, FCF Yield, Net Margin, CAGR
+  Valuation Score (20%) — price vs fair value (MOS / TenCap / PBT)
+  Moat Score      (40%) — RAG qualitative moat analysis
 """
 
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 root_dir = Path(__file__).resolve().parent.parent.parent.parent
 if str(root_dir) not in sys.path:
@@ -25,14 +30,15 @@ class InvestmentDecision:
     """Final investment decision with full traceability"""
 
     ticker: str
-    decision: str  # "STRONG BUY", "BUY", "HOLD", "PASS"
-    confidence: str  # "High", "Medium", "Low"
-    quantitative_score: int  # 0-100
-    qualitative_score: int  # 0-100 (normalized moat score)
-    overall_score: int  # 0-100
+    decision: str           # "STRONG BUY", "BUY", "HOLD", "PASS"
+    confidence: str         # "High", "Medium", "Low"
+    quantitative_score: int  # Quality Score 0-100
+    valuation_score: int     # Valuation Score 0-100
+    qualitative_score: int   # Moat Score normalized 0-100
+    overall_score: int       # Combined Score 0-100
     reasoning: str
     moat_analysis: MoatAnalysis
-    quantitative_metrics: Dict[str, Any]
+    quantitative_metrics: Dict[str, Any] = field(default_factory=dict)
     mos_result: Optional[Dict[str, Any]] = None
     profitability_result: Optional[Dict[str, Any]] = None
 
@@ -43,6 +49,7 @@ class InvestmentDecision:
             "decision": self.decision,
             "confidence": self.confidence,
             "quantitative_score": self.quantitative_score,
+            "valuation_score": self.valuation_score,
             "qualitative_score": self.qualitative_score,
             "overall_score": self.overall_score,
             "reasoning": self.reasoning,
@@ -57,139 +64,194 @@ class InvestmentDecision:
 class IntegratedAnalyzer:
     """
     Integrated Investment Analysis combining quantitative formulas
-    with qualitative AI moat analysis
+    with qualitative AI moat analysis.
     """
 
     def __init__(self):
         self.moat_analyzer = MoatAnalyzer()
 
-    def _calculate_quantitative_score(self, metrics: Dict[str, Any]) -> int:
-        """
-        Calculate quantitative score (0-100)
+    # ── Score calculators ────────────────────────────────────────────────────
 
-        Inputs:
-            margin_of_safety: percentage
-            roic: percentage
-            fcf_yield: percentage (optional)
+    def _calculate_quality_score(
+        self,
+        profitability_result: Optional[Dict],
+        growth_rate: float,
+    ) -> int:
         """
+        Quality Score: 0–100
+        ROIC (40) + FCF Yield (20) + Net Margin (20) + CAGR (20)
+        All inputs are decimals (e.g. 0.25 = 25%).
+        """
+        p = profitability_result or {}
         score = 0
 
-        # Margin of Safety: 0-40 points
-        mos = float(str(metrics.get("margin_of_safety", "0%")).replace("%", ""))
-        if mos >= 25:
-            score += 40
-        elif mos >= 15:
-            score += 30
-        elif mos >= 10:
-            score += 20
-        elif mos >= 5:
-            score += 10
+        # ROIC — max 40 pts
+        roic = p.get("roic") or 0
+        if roic >= 0.30:   score += 40
+        elif roic >= 0.20: score += 30
+        elif roic >= 0.15: score += 20
+        elif roic >= 0.10: score += 10
 
-        # ROIC: 0-40 points
-        roic_str = str(metrics.get("roic", "0%")).replace("%", "")
-        if roic_str and roic_str.lower() != "none":
-            roic = float(roic_str)
-            if roic >= 30:
-                score += 40
-            elif roic >= 20:
-                score += 30
-            elif roic >= 15:
-                score += 20
-            elif roic >= 10:
-                score += 10
+        # FCF Yield — max 20 pts
+        fcf_yield = p.get("fcf_yield") or 0
+        if fcf_yield >= 0.08:   score += 20
+        elif fcf_yield >= 0.05: score += 15
+        elif fcf_yield >= 0.03: score += 10
+        elif fcf_yield >= 0.01: score += 5
 
-        # FCF Yield: 0-20 points
-        if "fcf_yield" in metrics:
-            fcf = float(str(metrics["fcf_yield"]).replace("%", ""))
-            if fcf >= 8:
-                score += 20
-            elif fcf >= 5:
-                score += 15
-            elif fcf >= 3:
-                score += 10
-            elif fcf >= 1:
-                score += 5
+        # Net Margin — max 20 pts
+        nm = p.get("net_margin") or 0
+        if nm >= 0.20:   score += 20
+        elif nm >= 0.15: score += 15
+        elif nm >= 0.10: score += 10
+        elif nm >= 0.05: score += 5
 
+        # CAGR — max 20 pts
+        cagr = growth_rate or 0
+        if cagr >= 0.20:   score += 20
+        elif cagr >= 0.15: score += 15
+        elif cagr >= 0.10: score += 10
+        elif cagr >= 0.05: score += 5
+
+        result = min(100, score)
         log.debug(
-            "[investment_analyzer][quant_score] mos=%s roic=%s score=%d",
-            metrics.get("margin_of_safety"),
-            metrics.get("roic"),
-            score,
+            "[investment_analyzer][quality_score] roic=%.3f fcf_yield=%.3f "
+            "net_margin=%.3f cagr=%.3f score=%d",
+            roic, fcf_yield, nm, cagr, result,
         )
-        return min(100, score)
+        return result
+
+    def _calculate_valuation_score(
+        self,
+        mos_result: Optional[Dict],
+        tencap_result: Optional[Dict],
+        pbt_result: Optional[Dict],
+    ) -> int:
+        """
+        Valuation Score: 0–100
+        Average of available price-vs-fair-value scores per method.
+        100 = deeply undervalued, 50 = at fair value, 0 = severely overvalued.
+        Returns 50 (neutral) if no valuation data is available.
+        """
+        def _price_score(current: float, fair: float) -> Optional[int]:
+            if not current or not fair or fair <= 0 or current <= 0:
+                return None
+            ratio = current / fair
+            return max(0, min(100, int((2.0 - ratio) * 50)))
+
+        scores = []
+
+        if mos_result:
+            s = _price_score(
+                mos_result.get("Current Stock Price"),
+                mos_result.get("Fair Value Today"),
+            )
+            if s is not None:
+                scores.append(s)
+
+        if tencap_result:
+            s = _price_score(
+                tencap_result.get("current_stock_price"),
+                tencap_result.get("ten_cap_fair_value"),
+            )
+            if s is not None:
+                scores.append(s)
+
+        if pbt_result:
+            s = _price_score(
+                pbt_result.get("current_stock_price"),
+                pbt_result.get("fair_value"),
+            )
+            if s is not None:
+                scores.append(s)
+
+        result = int(sum(scores) / len(scores)) if scores else 50
+        log.debug(
+            "[investment_analyzer][valuation_score] method_scores=%s score=%d",
+            scores, result,
+        )
+        return result
+
+    def _make_decision(self, combined_score: int, red_flag_count: int):
+        """
+        Single authoritative decision logic — laut Flowchart v3.
+        Returns: (decision, confidence)
+        """
+        if combined_score >= 80 and red_flag_count == 0:
+            return "STRONG BUY", "High"
+        elif combined_score >= 70 and red_flag_count <= 1:
+            return "BUY", "Medium"
+        elif combined_score >= 50:
+            return "HOLD", "Medium"
+        else:
+            return "PASS", "Low"
 
     def _combine_scores(
-        self, quant_score: int, moat_analysis: MoatAnalysis
+        self,
+        quality_score: int,
+        valuation_score: int,
+        moat_analysis: MoatAnalysis,
     ) -> InvestmentDecision:
-        """Combine quantitative and qualitative scores"""
+        """
+        Combine Quality (40%) + Valuation (20%) + Moat (40%) scores.
+        Combined Score = Q×0.40 + V×0.20 + M×0.40 − Red Flag Penalty
+        """
         num_moats = len(moat_analysis.moats)
         max_moat = num_moats * 10 if num_moats > 0 else 50
-
         moat_normalized = (
             int((moat_analysis.overall_score / max_moat) * 100) if max_moat > 0 else 0
         )
 
-        overall = int((quant_score * 0.6) + (moat_normalized * 0.4))
+        combined = int(
+            quality_score * 0.40
+            + valuation_score * 0.20
+            + moat_normalized * 0.40
+        )
 
-        # Red flag penalty: -5 per flag, max -25
         red_flags = len(moat_analysis.red_flags)
-        overall = max(0, overall - min(25, red_flags * 5))
+        overall = max(0, combined - min(25, red_flags * 5))
 
-        if overall >= 80 and red_flags == 0:
-            decision, confidence = "STRONG BUY", "High"
-        elif overall >= 70 and red_flags <= 1:
-            decision = "BUY"
-            confidence = "High" if red_flags == 0 else "Medium"
-        elif overall >= 60:
-            decision, confidence = "BUY", "Medium"
-        elif overall >= 50 or (moat_analysis.moat_strength == "Wide" and overall >= 45):
-            decision = "HOLD"
-            confidence = "Medium" if red_flags <= 2 else "Low"
-        else:
-            decision, confidence = "PASS", "Low"
+        decision, confidence = self._make_decision(overall, red_flags)
 
         reasoning = self._generate_reasoning(
-            moat_analysis.ticker, quant_score, moat_analysis, decision
+            moat_analysis.ticker, quality_score, moat_analysis, decision
         )
 
         log.debug(
-            "[investment_analyzer][combine_scores] quant=%d moat_normalized=%d "
-            "red_flags=%d overall=%d decision=%s confidence=%s",
-            quant_score,
-            moat_normalized,
-            red_flags,
-            overall,
-            decision,
-            confidence,
+            "[investment_analyzer][combine_scores] quality=%d valuation=%d "
+            "moat_normalized=%d red_flags=%d combined=%d overall=%d "
+            "decision=%s confidence=%s",
+            quality_score, valuation_score, moat_normalized,
+            red_flags, combined, overall, decision, confidence,
         )
 
         return InvestmentDecision(
             ticker=moat_analysis.ticker,
             decision=decision,
             confidence=confidence,
-            quantitative_score=quant_score,
+            quantitative_score=quality_score,
+            valuation_score=valuation_score,
             qualitative_score=moat_normalized,
             overall_score=overall,
             reasoning=reasoning,
             moat_analysis=moat_analysis,
-            quantitative_metrics={},
         )
 
     def _generate_reasoning(
         self,
         ticker: str,
-        quant_score: int,
+        quality_score: int,
         moat_analysis: MoatAnalysis,
         decision: str,
     ) -> str:
         parts = [f"{ticker} analysis indicates a {decision} recommendation."]
 
-        if quant_score >= 70:
-            parts.append("Quantitative metrics suggest attractive valuation.")
-        elif quant_score >= 50:
-            parts.append("Quantitative metrics suggest fair valuation.")
+        if quality_score >= 70:
+            parts.append("Quantitative metrics show strong quality fundamentals.")
+        elif quality_score >= 50:
+            parts.append("Quantitative metrics show acceptable quality fundamentals.")
         else:
-            parts.append("Quantitative metrics suggest limited margin of safety.")
+            parts.append("Quantitative metrics indicate weak quality fundamentals.")
 
         if moat_analysis.moat_strength == "Wide":
             parts.append("The company appears to possess a wide economic moat.")
@@ -205,27 +267,33 @@ class IntegratedAnalyzer:
 
         return " ".join(parts)
 
+    # ── Main entry point ────────────────────────────────────────────────────
+
     def analyze(
         self,
         ticker: str,
-        quantitative_metrics: Dict,
+        profitability_result: Optional[Dict] = None,
+        mos_result: Optional[Dict] = None,
+        tencap_result: Optional[Dict] = None,
+        pbt_result: Optional[Dict] = None,
+        growth_rate: float = 0.10,
         load_sec_data: bool = False,
         load_earnings_data: bool = False,
         config: Optional[AnalysisConfig] = None,
-        mos_result: Optional[Dict] = None,
-        profitability_result: Optional[Dict] = None,
     ) -> InvestmentDecision:
         """
-        Run complete investment analysis
+        Run complete investment analysis.
 
         Args:
             ticker: Stock ticker
-            quantitative_metrics: Dict with margin_of_safety, roic, etc.
+            profitability_result: From profitability.calculate_profitability_metrics_from_ticker()
+            mos_result: From mos.calculate_mos_value_from_ticker()
+            tencap_result: From tencap._get_ten_cap_result()
+            pbt_result: From pbt._get_pbt_result()
+            growth_rate: CAGR growth estimate (decimal, e.g. 0.12)
             load_sec_data: Reload SEC 10-K data
             load_earnings_data: Load earnings transcripts
             config: AnalysisConfig (controls which components run)
-            mos_result: Pre-calculated MOS result
-            profitability_result: Pre-calculated profitability metrics
 
         Returns:
             InvestmentDecision
@@ -233,22 +301,11 @@ class IntegratedAnalyzer:
         log.info(
             "[investment_analyzer][start] ticker=%s pipeline_version=%s "
             "load_sec=%s load_earnings=%s",
-            ticker,
-            PIPELINE_VERSION,
-            load_sec_data,
-            load_earnings_data,
-        )
-        log.debug(
-            "[investment_analyzer][params] metrics=%s config=%s",
-            quantitative_metrics,
-            config,
+            ticker, PIPELINE_VERSION, load_sec_data, load_earnings_data,
         )
 
         if load_sec_data:
-            from backend.valuekit_ai.data_pipeline.load_sec_data import (
-                load_company_data,
-            )
-
+            from backend.valuekit_ai.data_pipeline.load_sec_data import load_company_data
             sec_result = load_company_data(ticker)
             if sec_result.get("status") != "success":
                 log.warning("[investment_analyzer][sec_load_failed] ticker=%s", ticker)
@@ -257,7 +314,6 @@ class IntegratedAnalyzer:
             from backend.valuekit_ai.data_pipeline.load_earnings_data import (
                 load_earnings_data as _load_earnings,
             )
-
             quarters = getattr(config, "earnings_quarters", 4)
             earnings_result = _load_earnings(ticker, quarters=quarters)
             if earnings_result.get("status") != "success":
@@ -265,16 +321,18 @@ class IntegratedAnalyzer:
                     "[investment_analyzer][earnings_load_failed] ticker=%s", ticker
                 )
 
-        quant_score = self._calculate_quantitative_score(quantitative_metrics)
+        # Calculate the three scores
+        quality_score = self._calculate_quality_score(profitability_result, growth_rate)
+        valuation_score = self._calculate_valuation_score(mos_result, tencap_result, pbt_result)
+
         log.info(
-            "[investment_analyzer][quant_score] ticker=%s score=%d", ticker, quant_score
+            "[investment_analyzer][scores] ticker=%s quality=%d valuation=%d",
+            ticker, quality_score, valuation_score,
         )
 
         if config is None or config.run_moat_analysis:
             moat_analysis = self.moat_analyzer.analyze_moats(ticker, config=config)
         else:
-            from backend.valuekit_ai.core.moat_analyzer import MoatAnalysis
-
             moat_analysis = MoatAnalysis(
                 ticker=ticker,
                 overall_score=0,
@@ -286,19 +344,23 @@ class IntegratedAnalyzer:
             )
             log.info("[investment_analyzer][moat_skipped] ticker=%s", ticker)
 
-        decision = self._combine_scores(quant_score, moat_analysis)
-        decision.quantitative_metrics = quantitative_metrics
+        decision = self._combine_scores(quality_score, valuation_score, moat_analysis)
+
+        # Attach raw results for traceability
+        decision.quantitative_metrics = {
+            "roic": profitability_result.get("roic") if profitability_result else None,
+            "fcf_yield": profitability_result.get("fcf_yield") if profitability_result else None,
+            "net_margin": profitability_result.get("net_margin") if profitability_result else None,
+            "growth_rate": growth_rate,
+        }
         decision.mos_result = mos_result
         decision.profitability_result = profitability_result
 
         log.info(
             "[investment_analyzer][complete] ticker=%s decision=%s confidence=%s "
-            "overall_score=%d pipeline_version=%s",
-            ticker,
-            decision.decision,
-            decision.confidence,
-            decision.overall_score,
-            PIPELINE_VERSION,
+            "overall_score=%d quality=%d valuation=%d pipeline_version=%s",
+            ticker, decision.decision, decision.confidence,
+            decision.overall_score, quality_score, valuation_score, PIPELINE_VERSION,
         )
 
         return decision

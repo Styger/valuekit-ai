@@ -231,40 +231,19 @@ class ValueKitAnalyzer:
                     "[valuekit_integration][pbt_failed] ticker=%s error=%s", ticker, e
                 )
 
-        # Step 4: Build quantitative metrics for AI
-        quantitative_metrics = {}
-        if mos_result:
-            fair_value = mos_result.get("Fair Value Today", 0)
-            current_price = mos_result.get("Current Stock Price", 0)
-            actual_mos = (
-                ((fair_value - current_price) / fair_value) * 100
-                if fair_value > 0 and current_price > 0
-                else 0
-            )
-            quantitative_metrics["margin_of_safety"] = f"{actual_mos:.2f}%"
-            quantitative_metrics["growth_rate"] = (
-                f"{growth_rate * 100:.2f}%" if growth_rate else "0%"
-            )
-            quantitative_metrics["current_price"] = current_price
-            quantitative_metrics["fair_value"] = fair_value
-
-        if profitability_result and not profitability_result.get("error"):
-            if profitability_result.get("roic"):
-                quantitative_metrics["roic"] = (
-                    f"{profitability_result['roic'] * 100:.2f}%"
-                )
-
-        # Step 5: AI moat analysis
+        # Step 5: AI moat analysis (quality + valuation + moat scores)
         ai_decision = None
         if config is None or config.run_moat_analysis:
             ai_decision = self.ai_analyzer.analyze(
                 ticker=ticker,
-                quantitative_metrics=quantitative_metrics,
+                profitability_result=profitability_result,
+                mos_result=mos_result,
+                tencap_result=tencap_result,
+                pbt_result=pbt_result,
+                growth_rate=growth_rate or 0.10,
                 load_sec_data=load_sec_data,
                 load_earnings_data=load_earnings_data,
                 config=config,
-                mos_result=mos_result,
-                profitability_result=profitability_result,
             )
 
         final_recommendation = self._combine_recommendations(mos_result, ai_decision)
