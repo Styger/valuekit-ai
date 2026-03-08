@@ -32,6 +32,7 @@ import streamlit_authenticator as stauth
 
 from backend.logic.fundamentals import check_fundamentals
 from backend.logic.peer_comparison import get_peers
+from backend.logic.growth_consensus import get_growth_consensus
 
 logging.basicConfig(
     level=logging.INFO,
@@ -378,11 +379,19 @@ def _page_mos():
     st.header("🛡️ Margin of Safety (MOS)")
     st.caption("Calculates intrinsic value and MOS-adjusted buy price.")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         ticker_input = _ticker_input("mos_ticker")
     with col2:
         multi_year = st.checkbox("Multiple Years?", value=False, key="mos_multi")
+    with col3:
+        auto_estimate = st.checkbox(
+            "Auto-estimate growth rate",
+            value=False,
+            key="mos_auto",
+            help="Blends 5-year historical CAGR (60%) with FMP analyst estimates (40%), capped at 25%",
+            disabled=multi_year,
+        )
 
     if multi_year:
         col1, col2, col3 = st.columns(3)
@@ -429,17 +438,21 @@ def _page_mos():
                 key="mos_single",
             )
         with col2:
-            growth_rate = (
-                st.number_input(
-                    "Growth Rate (%)",
-                    min_value=0.0,
-                    max_value=50.0,
-                    value=15.0,
-                    step=0.5,
-                    key="mos_gr",
+            if not auto_estimate:
+                growth_rate = (
+                    st.number_input(
+                        "Growth Rate (%)",
+                        min_value=0.0,
+                        max_value=50.0,
+                        value=15.0,
+                        step=0.5,
+                        key="mos_gr",
+                    )
+                    / 100
                 )
-                / 100
-            )
+            else:
+                growth_rate = None  # resolved after ticker validation
+                st.info("Growth rate will be estimated after analysis starts.")
         years = [single_year]
 
     col_a, col_b = st.columns(2)
@@ -459,6 +472,42 @@ def _page_mos():
         except ValueError as e:
             st.error(str(e))
             return
+
+        # Auto-estimate growth rate via 3-source consensus (single year only)
+        if auto_estimate and not multi_year:
+            try:
+                from backend.logic.growth_consensus import get_growth_consensus
+
+                with st.spinner("Estimating growth rate..."):
+                    consensus = get_growth_consensus(ticker, years[0])
+                growth_rate = consensus["rate"]
+                _METHOD_LABELS = {
+                    "consensus":      "Historical CAGR (60%) + Analyst estimate (40%)",
+                    "own_cagr_only":  "Historical CAGR only (no analyst data available)",
+                    "analyst_only":   "Analyst estimate only (no CAGR data available)",
+                    "fallback":       "Standard fallback 10% (no data available)",
+                }
+                label = _METHOD_LABELS.get(consensus["method"], consensus["method"])
+                cap_note = "  \n⚠️ Capped at 25%." if consensus["capped"] else ""
+                own = consensus["sources"]["own_cagr"]
+                ana = consensus["sources"]["analyst_estimate"]
+                st.info(
+                    f"**Auto Growth Rate: {growth_rate * 100:.1f}%**{cap_note}  \n"
+                    f"Method: {label}  \n"
+                    f"Own CAGR: {own * 100:.1f}%  |  "
+                    f"Analyst estimate: {ana * 100:.1f}%"
+                    if own is not None and ana is not None
+                    else f"**Auto Growth Rate: {growth_rate * 100:.1f}%**{cap_note}  \n"
+                    f"Method: {label}"
+                )
+                log.info(
+                    "[app][mos_consensus] ticker=%s rate=%.4f method=%s",
+                    ticker, growth_rate, consensus["method"],
+                )
+            except Exception as ce:
+                log.warning("[app][mos_consensus_error] ticker=%s error=%s", ticker, ce)
+                growth_rate = 0.10
+                st.warning("Could not estimate growth rate — using 10% fallback.")
 
         log.info(
             "[app][mos_start] ticker=%s years=%s growth=%.2f pipeline_version=%s",
@@ -1124,6 +1173,26 @@ def _page_overview():
                 )
 
                 st.session_state["analysis_count"] += 1
+
+                # Growth Rate transparency (consensus source)
+                gc = result.get("growth_consensus")
+                if gc:
+                    _METHOD_LABELS_OV = {
+                        "consensus":     "CAGR (60%) + Analyst (40%)",
+                        "own_cagr_only": "CAGR only",
+                        "analyst_only":  "Analyst only",
+                        "fallback":      "Fallback 10%",
+                    }
+                    gc_label = _METHOD_LABELS_OV.get(gc["method"], gc["method"])
+                    own = gc["sources"].get("own_cagr")
+                    ana = gc["sources"].get("analyst_estimate")
+                    cap_note = " (capped at 25%)" if gc["capped"] else ""
+                    parts = [f"Growth rate: **{gc['rate']*100:.1f}%{cap_note}** — {gc_label}"]
+                    if own is not None:
+                        parts.append(f"Own CAGR: {own*100:.1f}%")
+                    if ana is not None:
+                        parts.append(f"Analyst: {ana*100:.1f}%")
+                    st.caption("  |  ".join(parts))
 
                 # Combined Score — 3-Score Model (Quality 40% + Valuation 20% + Moat 40%)
                 ai = result.get("ai_decision") or {}

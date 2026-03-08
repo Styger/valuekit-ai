@@ -224,6 +224,57 @@ def _fetch_cashflow_statement_uncached(ticker, limit):
 
 
 # ============================================================================
+# ANALYST ESTIMATES - with cache
+# ============================================================================
+
+
+def get_analyst_estimates(ticker: str, limit: int = 5):
+    """Get analyst EPS/revenue estimates with caching (7 day TTL).
+
+    Only caches valid list responses — error dicts are never persisted so that
+    a transient 403 / plan-restriction response does not poison future calls.
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    cache = _get_cache()
+    cache_key = f"{ticker}_analyst_estimates_L{limit}"
+
+    cached = cache.get(cache_key, "fundamentals")
+    if cached is not None:
+        return cached
+
+    data = _fetch_analyst_estimates_uncached(ticker, limit)
+
+    if not isinstance(data, list):
+        _log.warning(
+            "[fmp_api][analyst_estimates_skip_cache] ticker=%s reason=non_list response=%s",
+            ticker, str(data)[:200],
+        )
+        return []
+
+    cache.set(cache_key, "fundamentals", data)
+    return data
+
+
+def _fetch_analyst_estimates_uncached(ticker: str, limit: int):
+    api_key = get_api_key()
+    url = (
+        f"https://financialmodelingprep.com/api/v3/analyst-estimates/{ticker}"
+        f"?limit={limit}&apikey={api_key}"
+    )
+    resp = requests.get(url, timeout=10)
+    if resp.status_code != 200:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "[fmp_api][analyst_estimates_http_error] ticker=%s status=%d body=%s",
+            ticker, resp.status_code, resp.text[:200],
+        )
+        return []
+    return resp.json()
+
+
+# ============================================================================
 # KEY METRICS - with cache
 # ============================================================================
 

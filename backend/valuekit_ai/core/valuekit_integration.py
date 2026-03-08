@@ -17,6 +17,7 @@ from backend.valuekit_ai.config.config import PIPELINE_VERSION
 from backend.valuekit_ai.core.investment_analyzer import IntegratedAnalyzer
 from backend.logic.mos import calculate_mos_value_from_ticker
 from backend.logic.cagr import _mos_growth_estimate_auto
+from backend.logic.growth_consensus import get_growth_consensus
 from backend.logic.tencap import _get_ten_cap_result
 from backend.logic.pbt import _get_pbt_result
 from backend.logic import profitability
@@ -134,24 +135,25 @@ class ValueKitAnalyzer:
             PIPELINE_VERSION,
         )
 
-        # Step 1: Estimate growth rate
+        # Step 1: Estimate growth rate via 3-source consensus
+        growth_consensus_result = None
         if auto_estimate_growth and growth_rate is None:
-            if config is None or config.run_cagr:
-                try:
-                    growth_metrics = self.estimate_growth_rate(ticker, end_year=year)
-                    growth_rate = growth_metrics.get("average_growth", 0.10)
-                    log.info(
-                        "[valuekit_integration][growth_estimated] ticker=%s rate=%.4f",
-                        ticker,
-                        growth_rate,
-                    )
-                except Exception as e:
-                    log.warning(
-                        "[valuekit_integration][growth_estimate_failed] ticker=%s error=%s",
-                        ticker,
-                        e,
-                    )
-                    growth_rate = 0.10
+            try:
+                growth_consensus_result = get_growth_consensus(ticker, year)
+                growth_rate = growth_consensus_result["rate"]
+                log.info(
+                    "[valuekit_integration][growth_consensus] ticker=%s rate=%.4f "
+                    "method=%s capped=%s",
+                    ticker, growth_rate,
+                    growth_consensus_result["method"],
+                    growth_consensus_result["capped"],
+                )
+            except Exception as e:
+                log.warning(
+                    "[valuekit_integration][growth_consensus_failed] ticker=%s error=%s",
+                    ticker, e,
+                )
+                growth_rate = 0.10
 
         # Step 2: MOS calculation
         mos_result = None
@@ -258,6 +260,7 @@ class ValueKitAnalyzer:
             "ticker": ticker,
             "year": year,
             "growth_rate": growth_rate,
+            "growth_consensus": growth_consensus_result,
             "discount_rate": discount_rate,
             "margin_of_safety_pct": margin_of_safety,
             "mos_result": mos_result,
