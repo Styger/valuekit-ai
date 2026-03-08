@@ -335,3 +335,13 @@ docs: flowchart or comment updates
 ```
 
 Tag MVP completion: `git tag v1.0.0-mvp`
+
+## Next Steps
+
+Read `IMPLEMENTATION_PLAN.md` for the full task list. Start with Milestone 1.
+
+## Python Environment
+
+- Always use `streamlit run frontend/app.py` or `/c/Python312/python.exe` for testing
+- Default `python` on this machine = Python 3.14 → chromadb incompatible
+- Never use bare `python` for import checks
