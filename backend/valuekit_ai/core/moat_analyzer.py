@@ -385,7 +385,10 @@ class MoatAnalyzer:
 
             config = self.RED_FLAG_CATEGORIES[category]
             query = config["query"].format(ticker=ticker)
-            result = self.rag.analyze_with_rag(query=query)
+            result = self.rag.analyze_with_rag(
+                query=query,
+                quantitative_data={"ticker": ticker},
+            )
 
             if result["status"] == "success":
                 analysis = result["analysis"].lower()

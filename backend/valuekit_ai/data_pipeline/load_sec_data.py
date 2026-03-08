@@ -17,52 +17,63 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 
-def load_company_data(ticker: str) -> dict:
+def load_company_data(ticker: str, years: int = 3) -> dict:
     """
-    Fetch SEC data and load into RAG system
+    Fetch the last `years` 10-K filings for `ticker` and load them into the
+    RAG vector store.
 
     Args:
         ticker: Stock ticker
+        years:  Number of annual 10-K filings to load (default 3)
 
     Returns:
-        Status dict
+        Status dict with keys: status, ticker, years_loaded, documents_added,
+        chunks_created, total_kb_size
     """
-    log.info(f"📊 Loading data for {ticker}...")
+    log.info(
+        "[load_sec_data][start] ticker=%s years=%d", ticker, years
+    )
 
-    # Step 1: Fetch SEC documents
-    log.info("  → Fetching SEC Edgar filings...")
-
-    # Use the standalone function that returns formatted docs
-    raw_docs = fetch_and_prepare_for_rag(ticker)
+    # Step 1: Fetch SEC documents (multi-year)
+    raw_docs = fetch_and_prepare_for_rag(ticker, limit=years)
 
     if not raw_docs:
+        log.warning("[load_sec_data][no_docs] ticker=%s", ticker)
         return {"status": "error", "message": f"No documents found for {ticker}"}
 
-    # Convert to LangChain Document format
-    documents = []
-    for doc in raw_docs:
-        langchain_doc = Document(page_content=doc["text"], metadata=doc["metadata"])
-        documents.append(langchain_doc)
+    # Derive which years were actually loaded from metadata
+    loaded_years = sorted(
+        {doc["metadata"].get("year") for doc in raw_docs if doc["metadata"].get("year")},
+        reverse=True,
+    )
+    log.info(
+        "[load_sec_data][fetched] ticker=%s sections=%d years=%s",
+        ticker, len(raw_docs), loaded_years,
+    )
 
-    log.info(f"  ✅ Found {len(documents)} sections")
+    # Step 2: Convert to LangChain Documents and load into RAG
+    documents = [
+        Document(page_content=doc["text"], metadata=doc["metadata"])
+        for doc in raw_docs
+    ]
 
-    # Step 2: Load into RAG
-    log.info("  → Loading into RAG system...")
     rag = get_rag_service()
     result = rag.add_financial_documents(documents)
 
     if result["status"] == "success":
-        log.info(
-            f"  ✅ Added {result['documents_added']} documents, created {result['chunks_created']} chunks"
-        )
-
-        # Step 3: Get stats
         stats = rag.get_knowledge_base_stats()
-        log.info(f"  📚 Total documents in knowledge base: {stats['count']}")
-
+        log.info(
+            "[load_sec_data][complete] ticker=%s years=%s documents=%d chunks=%d kb_total=%d",
+            ticker,
+            loaded_years,
+            result["documents_added"],
+            result["chunks_created"],
+            stats["count"],
+        )
         return {
             "status": "success",
             "ticker": ticker,
+            "years_loaded": loaded_years,
             "documents_added": result["documents_added"],
             "chunks_created": result["chunks_created"],
             "total_kb_size": stats["count"],

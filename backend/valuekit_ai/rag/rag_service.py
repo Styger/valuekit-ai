@@ -90,16 +90,36 @@ class RAGService:
         Returns:
             Dict with analysis, sources, and metadata
         """
-        retrieved_docs = self.vector_store.similarity_search_with_score(query)
+        # Extract ticker from quantitative_data so the vector store can apply
+        # a metadata where-filter (ticker == requested ticker) at ChromaDB level.
+        ticker = (quantitative_data or {}).get("ticker") or None
+
+        raw_docs = self.vector_store.similarity_search_with_score(
+            query,
+            ticker=ticker,
+            fetch_k=20,
+        )
+        log.debug(
+            "[rag_service][retrieval] ticker=%s raw_chunks=%d",
+            ticker, len(raw_docs),
+        )
+
         # Deduplicate by content — same chunk retrieved multiple times inflates context
-        seen = set()
+        seen: set = set()
         unique_docs = []
-        for doc, score in retrieved_docs:
+        for doc, score in raw_docs:
             h = hash(doc.page_content)
             if h not in seen:
                 seen.add(h)
                 unique_docs.append((doc, score))
-        retrieved_docs = unique_docs
+
+        log.debug(
+            "[rag_service][retrieval_dedup] ticker=%s unique_chunks=%d removed_duplicates=%d",
+            ticker, len(unique_docs), len(raw_docs) - len(unique_docs),
+        )
+
+        # Cap context to TOP_K_RESULTS to keep prompt size bounded
+        retrieved_docs = unique_docs[: self.config.TOP_K_RESULTS]
         context = self._format_context([doc for doc, score in retrieved_docs])
         prompt = self._build_analysis_prompt(query, context, quantitative_data)
 

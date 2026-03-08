@@ -109,11 +109,47 @@ class VectorStore:
             k = self.config.TOP_K_RESULTS
         return self.vectorstore.similarity_search(query, k=k)
 
-    def similarity_search_with_score(self, query: str, k: int = None) -> List[tuple]:
-        """Search with relevance scores"""
+    def similarity_search_with_score(
+        self,
+        query: str,
+        k: int = None,
+        ticker: str = None,
+        fetch_k: int = 20,
+    ) -> List[tuple]:
+        """
+        Search with relevance scores.
+
+        Args:
+            query: Embedding query string
+            k: Number of final results to return (defaults to TOP_K_RESULTS)
+            ticker: If given, restricts ChromaDB search to chunks where
+                    metadata['ticker'] == ticker.upper() via a where-filter.
+            fetch_k: Candidate pool size passed to ChromaDB when a ticker
+                     filter is active (should be ≥ k to survive deduplication).
+                     Ignored when no ticker is given.
+        """
         if k is None:
             k = self.config.TOP_K_RESULTS
-        return self.vectorstore.similarity_search_with_score(query, k=k)
+
+        if ticker:
+            where_filter = {"ticker": ticker.upper()}
+            results = self.vectorstore.similarity_search_with_score(
+                query,
+                k=fetch_k,
+                filter=where_filter,
+            )
+            log.debug(
+                "[vector_store][similarity_search] ticker=%s fetch_k=%d filter=%s raw_returned=%d",
+                ticker, fetch_k, where_filter, len(results),
+            )
+        else:
+            results = self.vectorstore.similarity_search_with_score(query, k=k)
+            log.debug(
+                "[vector_store][similarity_search] no_ticker_filter fetch_k=%d raw_returned=%d",
+                k, len(results),
+            )
+
+        return results
 
     def delete_collection(self):
         """Delete entire collection"""

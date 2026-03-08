@@ -64,59 +64,195 @@ class SECEdgarFetcher:
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-    def get_latest_10k_file(self, ticker: str) -> Optional[Path]:
-        """
-        Download latest 10-K and return file path
+    # ── Year helpers ──────────────────────────────────────────────────────────
 
-        Args:
-            ticker: Stock ticker
+    @staticmethod
+    def _parse_filing_year(dir_name: str) -> Optional[int]:
+        """
+        Extract 4-digit filing year from a SEC accession-number directory name.
+
+        Accession number format: {10-digit-CIK}-{2-digit-year}-{6-digit-seq}
+        Example: "0000320193-24-000123"  →  2024
+
+        Returns None if the format does not match.
+        """
+        parts = dir_name.split("-")
+        if len(parts) >= 2 and parts[1].isdigit() and len(parts[1]) == 2:
+            return 2000 + int(parts[1])
+        return None
+
+    def _pick_main_file(self, filing_dir: Path) -> Optional[Path]:
+        """Return the best 10-K file from a filing directory."""
+        txt_files = list(filing_dir.glob("*.txt"))
+        if not txt_files:
+            txt_files = list(filing_dir.glob("*.htm*"))
+        if not txt_files:
+            log.warning(
+                "[sec_fetcher][no_files] dir=%s files=%s",
+                filing_dir.name,
+                [f.name for f in filing_dir.glob("*")],
+            )
+            return None
+        # Prefer full-submission.txt; fallback to largest file
+        main_file = next(
+            (f for f in txt_files if "full-submission" in f.name.lower()), None
+        )
+        return main_file or max(txt_files, key=lambda f: f.stat().st_size)
+
+    def _get_10k_files(
+        self, ticker: str, limit: int
+    ) -> List[tuple]:
+        """
+        Download up to `limit` most-recent 10-K filings for `ticker`.
 
         Returns:
-            Path to downloaded file or None
+            List of (file_path, year) tuples, newest filing first.
+            `year` is the 4-digit integer derived from the accession number,
+            or None if parsing fails.
         """
         try:
-            log.info("[sec_fetcher][download] ticker=%s", ticker)
-            self.dl.get("10-K", ticker, limit=1)
+            log.info("[sec_fetcher][download] ticker=%s limit=%d", ticker, limit)
+            self.dl.get("10-K", ticker, limit=limit)
 
             search_dir = self.data_dir / "sec-edgar-filings" / ticker / "10-K"
-
             if not search_dir.exists():
                 log.error("[sec_fetcher][dir_not_found] path=%s", search_dir)
-                return None
+                return []
 
-            filing_dirs = sorted(search_dir.iterdir(), reverse=True)
+            filing_dirs = sorted(search_dir.iterdir(), reverse=True)[:limit]
             if not filing_dirs:
                 log.error("[sec_fetcher][no_filings] ticker=%s", ticker)
-                return None
+                return []
 
-            latest_dir = filing_dirs[0]
-            log.info("[sec_fetcher][latest_dir] dir=%s", latest_dir.name)
-
-            txt_files = list(latest_dir.glob("*.txt"))
-            if not txt_files:
-                html_files = list(latest_dir.glob("*.htm*"))
-                if not html_files:
-                    log.error(
-                        "[sec_fetcher][no_files] dir=%s files=%s",
-                        latest_dir,
-                        [f.name for f in latest_dir.glob("*")],
+            results = []
+            for filing_dir in filing_dirs:
+                year = self._parse_filing_year(filing_dir.name)
+                main_file = self._pick_main_file(filing_dir)
+                if main_file is None:
+                    log.warning(
+                        "[sec_fetcher][skip_dir] ticker=%s dir=%s reason=no_file",
+                        ticker, filing_dir.name,
                     )
-                    return None
-                txt_files = html_files
+                    continue
+                log.info(
+                    "[sec_fetcher][file_selected] ticker=%s dir=%s year=%s file=%s",
+                    ticker, filing_dir.name, year, main_file.name,
+                )
+                results.append((main_file, year))
 
-            # Prefer full-submission.txt; fallback to largest file
-            main_file = next(
-                (f for f in txt_files if "full-submission" in f.name.lower()), None
-            )
-            if not main_file:
-                main_file = max(txt_files, key=lambda f: f.stat().st_size)
-
-            log.info("[sec_fetcher][file_selected] file=%s", main_file.name)
-            return main_file
+            return results
 
         except Exception as e:
             log.error("[sec_fetcher][download_error] ticker=%s error=%s", ticker, e)
+            return []
+
+    # ── Single-filing parser ───────────────────────────────────────────────────
+
+    def _fetch_single_10k(
+        self, ticker: str, file_path: Path, year: Optional[int]
+    ) -> Optional[Dict]:
+        """
+        Parse one 10-K file into a sections dict.
+
+        Returns:
+            Dict with keys: ticker, year, filing_date, file_path, sections
+            or None if text extraction fails.
+        """
+        full_text = self.extract_text_from_html(file_path)
+        if not full_text:
             return None
+
+        log.info(
+            "[sec_fetcher][extracted] ticker=%s year=%s chars=%d",
+            ticker, year, len(full_text),
+        )
+
+        sections = {
+            "business": self.extract_section(
+                full_text,
+                [r"ITEM\s+1[\.\:\-\s]+BUSINESS", r"ITEM\s+1\b(?!\s*A)"],
+                [r"ITEM\s+1A", r"ITEM\s+2\b"],
+            ),
+            "risk_factors": self.extract_section(
+                full_text,
+                [r"ITEM\s+1A[\.\:\-\s]+RISK\s+FACTORS", r"ITEM\s+1A\b"],
+                [r"ITEM\s+1B", r"ITEM\s+2\b"],
+            ),
+            "mda": self.extract_section(
+                full_text,
+                [r"ITEM\s+7[\.\:\-\s]+MANAGEMENT", r"ITEM\s+7\b(?!\s*A)"],
+                [r"ITEM\s+7A", r"ITEM\s+8\b"],
+            ),
+        }
+        sections = {k: _sanitize_for_prompt(v) for k, v in sections.items() if v}
+
+        filing_date = (
+            file_path.parent.name.split("-")[0]
+            if "-" in file_path.parent.name
+            else "unknown"
+        )
+
+        log.info(
+            "[sec_fetcher][sections_found] ticker=%s year=%s sections=%s",
+            ticker, year, list(sections.keys()),
+        )
+
+        return {
+            "ticker": ticker,
+            "year": year,
+            "filing_date": filing_date,
+            "file_path": str(file_path),
+            "sections": sections,
+        }
+
+    # ── Multi-year public API ──────────────────────────────────────────────────
+
+    def get_10k_multi_year(self, ticker: str, limit: int = 3) -> List[Dict]:
+        """
+        Return up to `limit` most-recent 10-K filings for `ticker`.
+
+        Each filing is cached individually under the key
+        ``{ticker}_10K_{year}`` so re-runs skip already-parsed files.
+
+        Returns:
+            List of filing dicts (newest first).  Each dict contains
+            ``ticker``, ``year``, ``filing_date``, ``file_path``,
+            and ``sections``.
+        """
+        file_list = self._get_10k_files(ticker, limit)
+
+        results = []
+        for file_path, year in file_list:
+            # Use year-scoped cache key; fall back to dir name if year unknown
+            cache_key = (
+                f"{ticker}_10K_{year}" if year is not None
+                else f"{ticker}_10K_{file_path.parent.name}"
+            )
+            filing_data = self.cache.get_or_fetch(
+                key=cache_key,
+                data_type="sec_10k",
+                fetch_fn=lambda fp=file_path, y=year: self._fetch_single_10k(
+                    ticker, fp, y
+                ),
+            )
+            if filing_data:
+                results.append(filing_data)
+
+        log.info(
+            "[sec_fetcher][multi_year] ticker=%s requested=%d loaded=%d years=%s",
+            ticker,
+            limit,
+            len(results),
+            [r.get("year") for r in results],
+        )
+        return results
+
+    # ── Legacy single-filing methods (kept for backward compatibility) ─────────
+
+    def get_latest_10k_file(self, ticker: str) -> Optional[Path]:
+        """Return the file path of the single latest 10-K (legacy helper)."""
+        files = self._get_10k_files(ticker, limit=1)
+        return files[0][0] if files else None
 
     def extract_text_from_html(self, file_path: Path) -> Optional[str]:
         """
@@ -194,94 +330,20 @@ class SECEdgarFetcher:
 
         return section
 
-    def get_latest_10k(self, ticker: str) -> Optional[Dict]:
-        """
-        Get latest 10-K with caching
 
-        Args:
-            ticker: Stock ticker
-
-        Returns:
-            Dict with sections or None
-        """
-        cache_key = f"{ticker}_10K_latest"
-        return self.cache.get_or_fetch(
-            key=cache_key,
-            data_type="sec_10k",
-            fetch_fn=lambda: self._fetch_10k_uncached(ticker),
-        )
-
-    def _fetch_10k_uncached(self, ticker: str) -> Optional[Dict]:
-        """
-        Fetch and parse 10-K without cache (internal use)
-
-        Args:
-            ticker: Stock ticker
-
-        Returns:
-            Dict with parsed sections or None
-        """
-        log.info("[sec_fetcher][fetch] ticker=%s", ticker)
-
-        file_path = self.get_latest_10k_file(ticker)
-        if not file_path:
-            return None
-
-        log.info("[sec_fetcher][downloaded] file=%s", file_path.name)
-
-        full_text = self.extract_text_from_html(file_path)
-        if not full_text:
-            return None
-
-        log.info("[sec_fetcher][extracted] chars=%d", len(full_text))
-
-        sections = {
-            "business": self.extract_section(
-                full_text,
-                [r"ITEM\s+1[\.\:\-\s]+BUSINESS", r"ITEM\s+1\b(?!\s*A)"],
-                [r"ITEM\s+1A", r"ITEM\s+2\b"],
-            ),
-            "risk_factors": self.extract_section(
-                full_text,
-                [r"ITEM\s+1A[\.\:\-\s]+RISK\s+FACTORS", r"ITEM\s+1A\b"],
-                [r"ITEM\s+1B", r"ITEM\s+2\b"],
-            ),
-            "mda": self.extract_section(
-                full_text,
-                [r"ITEM\s+7[\.\:\-\s]+MANAGEMENT", r"ITEM\s+7\b(?!\s*A)"],
-                [r"ITEM\s+7A", r"ITEM\s+8\b"],
-            ),
-        }
-
-        # Sanitize all sections against prompt injection before caching
-        sections = {k: _sanitize_for_prompt(v) for k, v in sections.items() if v}
-
-        found = list(sections.keys())
-        log.info("[sec_fetcher][sections_found] ticker=%s sections=%s", ticker, found)
-
-        filing_date = (
-            file_path.parent.name.split("-")[0]
-            if "-" in file_path.parent.name
-            else "unknown"
-        )
-
-        return {
-            "ticker": ticker,
-            "filing_date": filing_date,
-            "file_path": str(file_path),
-            "sections": sections,
-        }
-
-
-def fetch_and_prepare_for_rag(ticker: str) -> List[Dict]:
+def fetch_and_prepare_for_rag(ticker: str, limit: int = 3) -> List[Dict]:
     """
-    Fetch SEC data and prepare for RAG ingestion
+    Fetch the last `limit` 10-K filings for `ticker` and prepare them for
+    RAG ingestion.
 
     Args:
-        ticker: Stock ticker
+        ticker: Stock ticker (validated: 1–5 uppercase letters)
+        limit:  Number of annual filings to load (default 3 → 2022/23/24)
 
     Returns:
-        List of dicts with 'text' and 'metadata' keys
+        List of dicts with 'text' and 'metadata' keys, one entry per
+        (filing × section).  Metadata includes a 'year' field derived from
+        the SEC accession number.
     """
     if not _re.match(r"^[A-Z]{1,5}$", ticker.strip().upper()):
         raise ValueError(f"Invalid ticker symbol: '{ticker}'")
@@ -289,18 +351,19 @@ def fetch_and_prepare_for_rag(ticker: str) -> List[Dict]:
 
     fetcher = SECEdgarFetcher()
 
-    try:
-        filing_data = fetcher.get_latest_10k(ticker)
-        if not filing_data:
-            return []
+    filings = fetcher.get_10k_multi_year(ticker, limit=limit)
+    if not filings:
+        return []
 
-        section_names = {
-            "business": "Business Description",
-            "risk_factors": "Risk Factors",
-            "mda": "Management Discussion & Analysis",
-        }
+    section_names = {
+        "business": "Business Description",
+        "risk_factors": "Risk Factors",
+        "mda": "Management Discussion & Analysis",
+    }
 
-        documents = []
+    documents = []
+    for filing_data in filings:
+        year = filing_data.get("year")
         for section_key, section_text in filing_data["sections"].items():
             if section_text:
                 documents.append(
@@ -313,17 +376,19 @@ def fetch_and_prepare_for_rag(ticker: str) -> List[Dict]:
                             "section": section_key,
                             "section_name": section_names.get(section_key, section_key),
                             "date": filing_data["filing_date"],
+                            "year": year,
                         },
                     }
                 )
 
-        log.info(
-            "[sec_fetcher][prepared] ticker=%s documents=%d", ticker, len(documents)
-        )
-        return documents
-
-    finally:
-        pass
+    log.info(
+        "[sec_fetcher][prepared] ticker=%s filings=%d documents=%d years=%s",
+        ticker,
+        len(filings),
+        len(documents),
+        [f.get("year") for f in filings],
+    )
+    return documents
 
 
 if __name__ == "__main__":
