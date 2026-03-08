@@ -1,0 +1,63 @@
+flowchart TD
+    A([Start]) --> B
+    B[/User gibt Ticker, Jahr, Moat-Typen\nBrand · Switch · Network · Cost · Scale\nLoad SEC ja/nein · Quant/Qual-Gewichtung\nWachstumsrate manuell oder auto/]
+    B --> C{Ticker\nValide?}
+    C -- Nein --> D([Abbruch])
+    C -- Ja --> SPLIT
+
+    SPLIT[ ]
+    style SPLIT fill:none,stroke:none
+
+    SPLIT --> QUANT
+    SPLIT --> QUAL
+
+    subgraph QUANT ["📊 QUANTITATIVE ANALYSE"]
+        direction TB
+        Q1[Finanzdaten laden via FMP API]
+        Q1 --> Q2["① Quality Score\nROIC · FCF Yield · Net Margin · CAGR\n→ Score 0–100"]
+        Q2 --> Q3["⑥ Wachstumsrate: 3-Quellen-Konsens\nEigener CAGR + FMP Analyst Estimates + Cap 25%\n→ Gewichteter Durchschnitt\n→ Anzeige: woher kommt die Zahl"]
+        Q3 --> Q4["② Valuation Score\nMOS · TenCap · PBT\nPreis vs. Fair Value je Methode\n→ Score 0–100\n⚠ Untergewichtet: Qualitätsunternehmen\nsind strukturell teuer"]
+        Q4 --> Q5["③ Quantitative Fundamentals\nDebt/Equity · FCF-Trend · Margen-Trend\nCurrent Ratio\n→ Red Flag Penalty: −5 pro Flag, max −25"]
+    end
+
+    subgraph QUAL ["🔍 QUALITATIVE ANALYSE"]
+        direction TB
+        L1[Dokumente laden\nSEC 10-K Filings · Earnings Transcripts]
+        L1 --> L7{"⑦ Data Quality Check\nAnzahl Sources · Relevance Score\n≥ Threshold?"}
+        L7 -- "Nein" --> L7W["⚠ Warnung anzeigen\nAnalyse basiert auf wenigen Quellen\nErgebnis mit Vorsicht interpretieren"]
+        L7 -- "Ja" --> L2
+        L7W --> L2
+        L2["Business Model Beschreibung\nvia RAG generieren\n→ Kontext für Moat-Analyse"]
+        L2 --> L3["④ Moat Score\nFür jeden aktivierten Moat-Typ RAG-Analyse:\nBrand Power · Switching Costs\nNetwork Effects · Cost Advantages\nEfficient Scale\n→ Moat Strength: None / Narrow / Wide\n→ Score 0–100"]
+        L3 --> L4["Qualitative Risks\nWettbewerb · Regulierung · Management\nvia RAG aus Dokumenten\n→ Red Flag Penalty: −5 pro Flag, max −25"]
+    end
+
+    QUANT --> COMBINE
+    QUAL --> COMBINE
+
+    COMBINE["Combined Score =\n(w₁ · Quality) + (w₂ · Valuation) + (w₃ · Moat)\n− Red Flag Penalty\nStandard: 40% · 20% · 40%"]
+
+    COMBINE --> K{Combined\nScore?}
+
+    K -- "≥ 80, 0 Flags" --> SB[STRONG BUY]
+    K -- "≥ 70, ≤ 1 Flag" --> BU[BUY]
+    K -- "≥ 50"           --> HO[HOLD]
+    K -- "< 50"           --> PA[PASS]
+
+    SB & BU & HO & PA --> P
+
+    P["InvestmentDecision ausgeben\nDecision · Confidence\nQuality Score · Valuation Score · Moat Score\nCombined Score · Reasoning"]
+
+    P --> PEERS["⑤ Peer Vergleich\nFMP + Claude Fallback → Peer-Liste\nautom. Vergleichstabelle:\nTicker · ROIC · Net Margin · CAGR · MOS%\n→ kein RAG, nur FMP-Daten"]
+
+    PEERS --> R([Dashboard rendern])
+
+    style QUANT   fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style QUAL    fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style COMBINE fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style L7W     fill:#fff8e1,stroke:#ff9800
+    style SB      fill:#c8e6c9,stroke:#388e3c
+    style BU      fill:#dcedc8,stroke:#558b2f
+    style HO      fill:#fff9c4,stroke:#f9a825
+    style PA      fill:#ffcdd2,stroke:#c62828
+    style PEERS   fill:#e8f5e9,stroke:#4caf50

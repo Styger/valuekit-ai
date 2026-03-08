@@ -30,6 +30,9 @@ from backend.logic.cagr import (
 from backend.api import fmp_api
 import streamlit_authenticator as stauth
 
+from backend.logic.fundamentals import check_fundamentals
+from backend.logic.peer_comparison import get_peers
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s][%(name)s] %(message)s",
@@ -902,6 +905,17 @@ def _page_moat():
         ):
             try:
                 analyzer = ValueKitAnalyzer()
+
+                # ── Business Model ────────────────────────────────────────
+                bm_result = None
+                if load_sec or load_earnings:
+                    bm_result = (
+                        analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
+                            ticker
+                        )
+                    )
+
+                # ── Full moat analysis ────────────────────────────────────
                 result = analyzer.analyze_stock_complete(
                     ticker=ticker,
                     year=year,
@@ -920,6 +934,17 @@ def _page_moat():
 
                 st.session_state["analysis_count"] += 1
 
+                # ── Business Model expander ───────────────────────────────
+                if bm_result and bm_result.get("status") == "success":
+                    with st.expander("📋 Business Model", expanded=True):
+                        st.markdown(bm_result["description"])
+                        if bm_result.get("sources_used", 0) > 0:
+                            st.caption(
+                                f"Sources used: {bm_result['sources_used']} document sections"
+                            )
+                    st.markdown("")
+
+                # ── Moat scores ───────────────────────────────────────────
                 st.subheader(f"Moat Results — {ticker} ({year})")
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Moat Decision", ai.get("decision", "N/A"))
@@ -935,6 +960,71 @@ def _page_moat():
                         "**Red Flags Identified:**\n"
                         + "\n".join(f"- {rf}" for rf in ai["red_flags"])
                     )
+
+                # ── Quantitative Fundamentals ─────────────────────────────
+                st.markdown("---")
+                st.subheader("📊 Quantitative Fundamentals")
+                st.caption(
+                    "Financial health check — runs independently of RAG documents."
+                )
+
+                try:
+                    fund_results = check_fundamentals(ticker, year)
+                    STATUS_ICONS = {
+                        "OK": "✅",
+                        "Warning": "⚠️",
+                        "Flag": "🚩",
+                        "N/A": "—",
+                    }
+
+                    cols = st.columns(len(fund_results))
+                    for col, check in zip(cols, fund_results):
+                        icon = STATUS_ICONS.get(check["status"], "—")
+                        col.metric(
+                            label=f"{icon} {check['metric']}",
+                            value=check["value"],
+                            help=check["note"],
+                        )
+
+                    flags = [c for c in fund_results if c["status"] == "Flag"]
+                    warnings = [c for c in fund_results if c["status"] == "Warning"]
+                    if flags:
+                        st.error(
+                            "🚩 **Flag(s):** " + ", ".join(f["metric"] for f in flags)
+                        )
+                    if warnings:
+                        st.warning(
+                            "⚠️ **Warning(s):** "
+                            + ", ".join(w["metric"] for w in warnings)
+                        )
+                    if not flags and not warnings:
+                        st.success("✅ All fundamental checks passed")
+
+                except Exception as fe:
+                    log.warning(
+                        "[app][fundamentals_error] ticker=%s error=%s", ticker, fe
+                    )
+                    st.info("Could not load quantitative fundamentals.")
+
+                # ── Peer Companies ────────────────────────────────────────
+                st.markdown("---")
+                st.subheader("🔗 Similar Companies")
+
+                with st.spinner("Loading peers..."):
+                    try:
+                        peers = get_peers(ticker)
+                    except Exception as pe:
+                        log.warning("[app][peers_error] ticker=%s error=%s", ticker, pe)
+                        peers = []
+
+                if peers:
+                    peer_str = "  ·  ".join(f"**{p}**" for p in peers)
+                    st.markdown(peer_str)
+                    st.caption(
+                        "To analyze a peer, enter their ticker above and run a new analysis."
+                    )
+                else:
+                    st.info("No peer data available for this ticker.")
 
                 log.info(
                     "[app][moat_complete] ticker=%s decision=%s score=%s",

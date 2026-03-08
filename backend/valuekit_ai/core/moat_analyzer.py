@@ -165,6 +165,58 @@ class MoatAnalyzer:
     def __init__(self):
         self.rag = get_rag_service()
 
+    # ── Business Model ────────────────────────────────────────────────────────
+
+    def analyze_business_model(self, ticker: str) -> Dict:
+        """
+        Generate a concise business model description using RAG.
+
+        Covers: business model, main products/services, target markets,
+        revenue sources.
+
+        Args:
+            ticker: Stock ticker
+
+        Returns:
+            Dict with 'description' (str) and 'status' ('success' | 'error')
+        """
+        query = (
+            f"Describe {ticker}'s business model in 3-5 sentences. Cover: "
+            f"(1) what the company does, (2) its main products or services, "
+            f"(3) its primary target markets or customer segments, and "
+            f"(4) its main revenue sources. Be factual and concise."
+        )
+
+        log.info("[moat_analyzer][business_model] ticker=%s", ticker)
+
+        result = self.rag.analyze_with_rag(
+            query=query,
+            quantitative_data={"ticker": ticker},
+            max_tokens=512,
+        )
+
+        if result["status"] == "success":
+            log.info(
+                "[moat_analyzer][business_model_ok] ticker=%s chars=%d",
+                ticker,
+                len(result["analysis"]),
+            )
+            return {
+                "status": "success",
+                "description": result["analysis"],
+                "sources_used": len(result.get("sources", [])),
+            }
+        else:
+            log.warning("[moat_analyzer][business_model_failed] ticker=%s", ticker)
+            return {
+                "status": "error",
+                "description": "Business model description could not be retrieved. "
+                "Ensure SEC filings are loaded for this ticker.",
+                "sources_used": 0,
+            }
+
+    # ── Single Moat ───────────────────────────────────────────────────────────
+
     def analyze_single_moat(
         self, ticker: str, moat_key: str, moat_config: Dict
     ) -> MoatScore:
@@ -300,8 +352,6 @@ class MoatAnalyzer:
             "[moat_analyzer][red_flags] ticker=%s count=%d", ticker, len(red_flags)
         )
         return red_flags
-
-    # Lines ~: replace the buggy analyze_moats method
 
     def analyze_moats(
         self, ticker: str, config: Optional[AnalysisConfig] = None
