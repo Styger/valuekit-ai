@@ -178,6 +178,95 @@ def get_peers(ticker: str) -> List[str]:
     return peers
 
 
+# ── Peer Metrics Table ────────────────────────────────────────────────────────
+
+
+def _fetch_peer_row(ticker: str, year: int, is_subject: bool) -> dict:
+    """
+    Fetch ROIC, Net Margin, CAGR (5Y), and MOS% for a single ticker.
+    All failures return 'N/A' so one bad ticker never blocks the table.
+    """
+    row: dict = {"Ticker": ticker, "_is_subject": is_subject}
+
+    # ── Profitability (ROIC + Net Margin) ─────────────────────────────────────
+    try:
+        from backend.logic.profitability import calculate_profitability_metrics_from_ticker
+        prof = calculate_profitability_metrics_from_ticker(ticker, year)
+        roic = prof.get("roic")
+        nm   = prof.get("net_margin")
+        row["ROIC"]       = f"{roic * 100:.1f}%" if roic is not None else "N/A"
+        row["Net Margin"] = f"{nm   * 100:.1f}%" if nm   is not None else "N/A"
+    except Exception as e:
+        log.warning("[peer_metrics][profitability_error] ticker=%s error=%s", ticker, e)
+        row["ROIC"] = "N/A"
+        row["Net Margin"] = "N/A"
+
+    # ── CAGR (5Y) ─────────────────────────────────────────────────────────────
+    cagr_val: Optional[float] = None
+    try:
+        from backend.logic.cagr import get_cagr_for_screening
+        cagr_val = get_cagr_for_screening(ticker, period_years=5)
+        row["CAGR (5Y)"] = f"{cagr_val * 100:.1f}%" if cagr_val is not None else "N/A"
+    except Exception as e:
+        log.warning("[peer_metrics][cagr_error] ticker=%s error=%s", ticker, e)
+        row["CAGR (5Y)"] = "N/A"
+
+    # ── MOS% (upside to fair value) ───────────────────────────────────────────
+    try:
+        from backend.logic.mos import calculate_mos_value_from_ticker
+        mos_result = calculate_mos_value_from_ticker(
+            ticker=ticker,
+            year=year,
+            growth_rate=cagr_val if cagr_val is not None else 0.10,
+            discount_rate=0.15,
+            margin_of_safety=0.50,
+        )
+        fair_value = mos_result.get("Fair Value Today")
+        current    = mos_result.get("Current Stock Price")
+        if fair_value and current and current > 0:
+            pct = (fair_value - current) / current * 100
+            row["MOS%"] = f"{pct:+.1f}%"
+        else:
+            row["MOS%"] = "N/A"
+    except Exception as e:
+        log.warning("[peer_metrics][mos_error] ticker=%s error=%s", ticker, e)
+        row["MOS%"] = "N/A"
+
+    return row
+
+
+def get_peer_metrics(ticker: str, year: int):
+    """
+    Build a comparison table for ticker + its peers.
+
+    Returns:
+        pandas.DataFrame with columns:
+            Ticker | ROIC | Net Margin | CAGR (5Y) | MOS% | _is_subject
+        _is_subject is True for the subject row (used for highlighting).
+        N/A is used for any metric that could not be fetched.
+    """
+    import pandas as pd
+
+    ticker = ticker.strip().upper()
+    peers  = get_peers(ticker)
+    all_tickers = [ticker] + peers
+
+    log.info(
+        "[peer_metrics][start] ticker=%s year=%d peers=%s",
+        ticker, year, peers,
+    )
+
+    rows = []
+    for t in all_tickers:
+        row = _fetch_peer_row(t, year, is_subject=(t == ticker))
+        rows.append(row)
+        log.debug("[peer_metrics][row] %s", row)
+
+    df = pd.DataFrame(rows, columns=["Ticker", "ROIC", "Net Margin", "CAGR (5Y)", "MOS%", "_is_subject"])
+    log.info("[peer_metrics][done] ticker=%s rows=%d", ticker, len(df))
+    return df
+
+
 if __name__ == "__main__":
     import logging
 

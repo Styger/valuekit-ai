@@ -31,7 +31,7 @@ from backend.api import fmp_api
 import streamlit_authenticator as stauth
 
 from backend.logic.fundamentals import check_fundamentals
-from backend.logic.peer_comparison import get_peers
+from backend.logic.peer_comparison import get_peers, get_peer_metrics
 from backend.logic.growth_consensus import get_growth_consensus
 
 logging.basicConfig(
@@ -1100,25 +1100,36 @@ def _page_moat():
                     )
                     st.info("Could not load quantitative fundamentals.")
 
-                # ── Peer Companies ────────────────────────────────────────
+                # ── Peer Comparison Table ─────────────────────────────────
                 st.markdown("---")
-                st.subheader("🔗 Similar Companies")
+                st.subheader("🏢 Peer Comparison")
 
-                with st.spinner("Loading peers..."):
+                with st.spinner("Loading peer metrics..."):
                     try:
-                        peers = get_peers(ticker)
+                        peer_df = get_peer_metrics(ticker, year)
+
+                        display_df = peer_df.drop(columns=["_is_subject"])
+
+                        def _highlight_subject(row):
+                            is_subj = peer_df.loc[row.name, "_is_subject"]
+                            return (
+                                ["font-weight: bold; background-color: #e8f5e9"] * len(row)
+                                if is_subj else [""] * len(row)
+                            )
+
+                        st.dataframe(
+                            display_df.style.apply(_highlight_subject, axis=1),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                        st.caption(
+                            "Bold row = subject ticker. "
+                            "MOS% = upside to fair value (positive = undervalued). "
+                            "FMP data only · no RAG."
+                        )
                     except Exception as pe:
                         log.warning("[app][peers_error] ticker=%s error=%s", ticker, pe)
-                        peers = []
-
-                if peers:
-                    peer_str = "  ·  ".join(f"**{p}**" for p in peers)
-                    st.markdown(peer_str)
-                    st.caption(
-                        "To analyze a peer, enter their ticker above and run a new analysis."
-                    )
-                else:
-                    st.info("No peer data available for this ticker.")
+                        st.info("Peer comparison table could not be loaded.")
 
                 log.info(
                     "[app][moat_complete] ticker=%s decision=%s score=%s",
