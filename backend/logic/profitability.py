@@ -79,7 +79,8 @@ def calculate_profitability_metrics_from_ticker(ticker: str, year: int) -> Dict:
     asset_turnover = revenue / total_assets if total_assets > 0 else None
 
     # FCF Yield from FMP key metrics (FCF / Market Cap, as decimal)
-    fcf_yield = km_data.get("fcfYield")
+    # FMP field name is "freeCashFlowYield" (confirmed via API inspection)
+    fcf_yield = km_data.get("freeCashFlowYield")
 
     # Return pure data
     result = {

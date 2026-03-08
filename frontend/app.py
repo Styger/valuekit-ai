@@ -1125,36 +1125,41 @@ def _page_overview():
 
                 st.session_state["analysis_count"] += 1
 
-                # Combined Score
-                score_data = _compute_combined_score(
-                    result, w_mos, w_tencap, w_pbt, quant_vs_moat, mos_pct
-                )
-                if score_data["combined"] is not None:
+                # Combined Score — 3-Score Model (Quality 40% + Valuation 20% + Moat 40%)
+                ai = result.get("ai_decision") or {}
+                overall = ai.get("overall_score")
+                if overall is not None:
                     st.subheader("🎯 Combined Investment Score")
-                    cs1, cs2, cs3 = st.columns(3)
-                    cs1.metric("Combined Score", f"{score_data['combined']:.0f} / 100")
+                    cs1, cs2, cs3, cs4 = st.columns(4)
+                    cs1.metric(
+                        "Quality Score (40%)",
+                        f"{ai.get('quantitative_score', 0)} / 100",
+                        help="ROIC · FCF Yield · Net Margin · CAGR",
+                    )
                     cs2.metric(
-                        "Quant Score",
-                        f"{score_data['quant_score']:.0f} / 100"
-                        if score_data["quant_score"] is not None
-                        else "N/A",
+                        "Valuation Score (20%)",
+                        f"{ai.get('valuation_score', 0)} / 100",
+                        help="MOS · TenCap · PBT — price vs fair value",
                     )
                     cs3.metric(
-                        "Moat Score",
-                        f"{score_data['moat_score']} / 100"
-                        if score_data["moat_score"] is not None
-                        else "N/A",
+                        "Moat Score (40%)",
+                        f"{ai.get('qualitative_score', 0)} / 100",
+                        help="RAG qualitative moat analysis",
                     )
+                    cs4.metric(
+                        "Combined Score",
+                        f"{overall} / 100",
+                        help="Quality×0.40 + Valuation×0.20 + Moat×0.40 − Red Flag Penalty",
+                    )
+                    decision = ai.get("decision", "N/A")
+                    red_flags = len(ai.get("red_flags") or [])
                     rec_fn = {
                         "STRONG BUY": st.success,
                         "BUY": st.success,
                         "HOLD": st.warning,
                         "PASS": st.error,
-                    }.get(score_data["recommendation"], st.info)
-                    rec_fn(
-                        f"**Score Recommendation: {score_data['recommendation']}** "
-                        f"({quant_vs_moat}% Quant / {100 - quant_vs_moat}% Moat)"
-                    )
+                    }.get(decision, st.info)
+                    rec_fn(f"**{decision}** — Combined={overall} | Red Flags={red_flags}")
                     st.divider()
 
                 rec = result.get("final_recommendation", "N/A")
