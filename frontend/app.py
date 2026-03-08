@@ -891,7 +891,7 @@ def _page_pbt():
                 st.error("An error occurred. Please try again.")
 
 
-# ─── AI Moat Page ────────────────────────────────────────────────────────────
+# ─── Shared rendering helpers ─────────────────────────────────────────────────
 
 
 def _get_data_quality_tier(avg_relevance: float, sources: int) -> dict:
@@ -909,6 +909,228 @@ def _get_data_quality_tier(avg_relevance: float, sources: int) -> dict:
         return {"level": "medium", "label": "Medium data quality",  "color": "warning"}
     else:
         return {"level": "low",    "label": "Low data quality",     "color": "error"}
+
+
+def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
+    """
+    Render the full moat analysis UI block.
+    Called at top level from _page_moat() and inside an expander from _page_overview().
+
+    Args:
+        ticker:    Stock ticker — passed to check_fundamentals() and get_peer_metrics()
+        year:      Analysis year
+        ai:        ai_decision dict (InvestmentDecision.to_dict())
+        bm_result: Optional result from analyze_business_model()
+    """
+    # ── RAG data quality indicator ────────────────────────────────────────────
+    avg_rel   = ai.get("avg_relevance_score", 0.0)
+    total_src = ai.get("total_sources_used", 0)
+    tier = _get_data_quality_tier(avg_rel, total_src)
+    _QUALITY_MSG = {
+        "high": (
+            f"**{tier['label']}** — {total_src} relevant document sections "
+            f"analysed (avg. relevance {avg_rel:.2f})."
+        ),
+        "medium": (
+            f"**{tier['label']}** — {total_src} document section(s) analysed "
+            f"(avg. relevance {avg_rel:.2f}). Result may be incomplete."
+        ),
+        "low": (
+            f"**{tier['label']}** — Only {total_src} document section(s) found "
+            f"(avg. relevance {avg_rel:.2f}). "
+            "Enable 'Load SEC Filings' or load more data for a better result."
+        ),
+    }
+    msg = _QUALITY_MSG[tier["level"]]
+    if tier["level"] == "high":
+        st.success(msg)
+    elif tier["level"] == "medium":
+        st.warning(msg)
+    else:
+        st.error(msg)
+
+    # ── Business Model ────────────────────────────────────────────────────────
+    if bm_result and bm_result.get("status") == "success":
+        with st.expander("📋 Business Model", expanded=False):
+            st.markdown(bm_result["description"])
+            if bm_result.get("sources_used", 0) > 0:
+                st.caption(
+                    f"Sources used: {bm_result['sources_used']} document sections"
+                )
+
+    # ── Summary metrics ───────────────────────────────────────────────────────
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Decision",     ai.get("decision", "N/A"))
+    c2.metric("Confidence",   ai.get("confidence", "N/A"))
+    c3.metric("Overall Score", f"{ai.get('overall_score', 0)}/100")
+    c4.metric("Moat Strength", ai.get("moat_strength", "N/A"))
+
+    st.markdown("---")
+    st.markdown(f"**Reasoning:** {ai.get('reasoning', 'N/A')}")
+    if ai.get("red_flags"):
+        st.warning(
+            "**Red Flags Identified:**\n"
+            + "\n".join(f"- {rf}" for rf in ai["red_flags"])
+        )
+
+    # ── Per-type moat scores with progress bars ───────────────────────────────
+    moat_details = ai.get("moat_details") or {}
+    if moat_details:
+        with st.expander("🔍 Moat Breakdown", expanded=False):
+            _CONF_COLOR = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}
+            for _key, md in moat_details.items():
+                score     = md.get("score", 0)
+                bar       = "█" * score + "░" * (10 - score)
+                conf      = md.get("confidence", "Low")
+                conf_icon = _CONF_COLOR.get(conf, "⚪")
+                srcs      = md.get("sources_used", 0)
+                st.markdown(
+                    f"**{md['name']}** — {score}/10 &nbsp; "
+                    f"`{bar}` &nbsp; {conf_icon} {conf} confidence"
+                    + (f"  ·  {srcs} sources" if srcs else "")
+                )
+                for ev in (md.get("evidence") or []):
+                    st.caption(f"› {ev}")
+
+    # ── Quantitative Fundamentals ─────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📊 Quantitative Fundamentals")
+    st.caption("Financial health check — runs independently of RAG documents.")
+    try:
+        fund_results = check_fundamentals(ticker, year)
+        _STATUS_ICONS = {"OK": "✅", "Warning": "⚠️", "Flag": "🚩", "N/A": "—"}
+        cols = st.columns(len(fund_results))
+        for col, check in zip(cols, fund_results):
+            icon = _STATUS_ICONS.get(check["status"], "—")
+            col.metric(
+                label=f"{icon} {check['metric']}",
+                value=check["value"],
+                help=check["note"],
+            )
+        _flags = [c for c in fund_results if c["status"] == "Flag"]
+        _warns = [c for c in fund_results if c["status"] == "Warning"]
+        if _flags:
+            st.error("🚩 **Flag(s):** " + ", ".join(f["metric"] for f in _flags))
+        if _warns:
+            st.warning("⚠️ **Warning(s):** " + ", ".join(w["metric"] for w in _warns))
+        if not _flags and not _warns:
+            st.success("✅ All fundamental checks passed")
+    except Exception as _fe:
+        log.warning("[app][fundamentals_error] ticker=%s error=%s", ticker, _fe)
+        st.info("Could not load quantitative fundamentals.")
+
+    # ── Peer Comparison ───────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("🏢 Peer Comparison")
+    with st.spinner("Loading peer metrics..."):
+        try:
+            peer_df    = get_peer_metrics(ticker, year)
+            display_df = peer_df.drop(columns=["_is_subject"])
+
+            def _highlight_subject(row):
+                is_subj = peer_df.loc[row.name, "_is_subject"]
+                return (
+                    ["font-weight: bold; background-color: #e8f5e9"] * len(row)
+                    if is_subj else [""] * len(row)
+                )
+
+            st.dataframe(
+                display_df.style.apply(_highlight_subject, axis=1),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "Bold row = subject ticker. "
+                "MOS% = upside to fair value (positive = undervalued). "
+                "FMP data only · no RAG."
+            )
+        except Exception as _pe:
+            log.warning("[app][peers_error] ticker=%s error=%s", ticker, _pe)
+            st.info("Peer comparison table could not be loaded.")
+
+
+def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
+    """
+    Render Quality Score, Valuation Score, MOS, TenCap, PBT, Profitability.
+    Called from _page_overview() and the 'Full Pipeline Overview' expander on
+    _page_moat().  No RAG calls — only FMP quantitative data (all cached).
+
+    Args:
+        result:  dict from ValueKitAnalyzer.analyze_stock_complete()
+        mos_pct: margin of safety % for buy-price display (default 50%)
+    """
+    def _pct(v):
+        return f"{v * 100:.1f}%" if v is not None else "N/A"
+
+    # Quality + Valuation scores (from ai_decision, populated even without moat)
+    ai = result.get("ai_decision") or {}
+    if ai:
+        sc1, sc2 = st.columns(2)
+        sc1.metric(
+            "Quality Score (40%)",
+            f"{ai.get('quantitative_score', 0)} / 100",
+            help="ROIC · FCF Yield · Net Margin · CAGR",
+        )
+        sc2.metric(
+            "Valuation Score (20%)",
+            f"{ai.get('valuation_score', 0)} / 100",
+            help="MOS · TenCap · PBT — price vs fair value",
+        )
+        st.divider()
+
+    # MOS
+    if result.get("mos_result"):
+        r = result["mos_result"]
+        st.subheader("🛡️ Margin of Safety")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Fair Value",    f"${r.get('Fair Value Today', 0):.2f}")
+        c2.metric("MOS Price",     f"${r.get('MOS Price', 0):.2f}")
+        c3.metric("Current Price", f"${r.get('Current Stock Price', 0):.2f}")
+        c4.metric("EPS",           f"${r.get('EPS_now', 0):.2f}")
+        st.info(
+            f"Price vs Fair Value: {r.get('Price vs Fair Value', 'N/A')} | "
+            f"Growth Rate: {r.get('Growth Rate', 0):.1f}% | "
+            f"MOS: {r.get('Margin of Safety', 'N/A')}"
+        )
+        st.divider()
+
+    # TenCap
+    if result.get("tencap_result"):
+        r = result["tencap_result"]
+        st.subheader("🔟 TenCap")
+        c1, c2, c3 = st.columns(3)
+        tc_mos_price = r.get("ten_cap_fair_value", 0) * (1 - mos_pct)
+        c1.metric(
+            f"TenCap Buy Price ({mos_pct * 100:.0f}% MOS)", f"${tc_mos_price:.2f}"
+        )
+        c2.metric("TenCap Fair Value", f"${r.get('ten_cap_fair_value', 0):.2f}")
+        c3.metric("Current Price",     f"${r.get('current_stock_price', 0):.2f}")
+        st.divider()
+
+    # PBT
+    if result.get("pbt_result"):
+        r = result["pbt_result"]
+        st.subheader("⏱️ Payback Time")
+        c1, c2, c3 = st.columns(3)
+        pbt_mos_price = r.get("fair_value", 0) * (1 - mos_pct)
+        c1.metric(f"Buy Price ({mos_pct * 100:.0f}% MOS)", f"${pbt_mos_price:.2f}")
+        c2.metric("Fair Value (2×)", f"${r.get('fair_value', 0):.2f}")
+        c3.metric("Current Price",   f"${r.get('current_stock_price', 0):.2f}")
+        st.divider()
+
+    # Profitability
+    if result.get("profitability_result"):
+        r = result["profitability_result"]
+        if not r.get("error"):
+            st.subheader("💰 Profitability")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("ROE",        _pct(r.get("roe")))
+            c2.metric("ROA",        _pct(r.get("roa")))
+            c3.metric("ROIC",       _pct(r.get("roic")))
+            c4.metric("Net Margin", _pct(r.get("net_margin")))
+
+
+# ─── AI Moat Page ─────────────────────────────────────────────────────────────
 
 
 def _page_moat():
@@ -972,16 +1194,14 @@ def _page_moat():
             try:
                 analyzer = ValueKitAnalyzer()
 
-                # ── Business Model ────────────────────────────────────────
+                # Business Model (only when SEC/earnings data is loaded)
                 bm_result = None
                 if load_sec or load_earnings:
                     bm_result = (
-                        analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
-                            ticker
-                        )
+                        analyzer.ai_analyzer.moat_analyzer.analyze_business_model(ticker)
                     )
 
-                # ── Full moat analysis ────────────────────────────────────
+                # Moat analysis
                 result = analyzer.analyze_stock_complete(
                     ticker=ticker,
                     year=year,
@@ -993,6 +1213,19 @@ def _page_moat():
                     config=config,
                 )
 
+                # Quantitative pipeline (no moat re-run; FMP data is cached)
+                from backend.valuekit_ai.config.analysis_config import quantitative_only
+                quant_result = analyzer.analyze_stock_complete(
+                    ticker=ticker,
+                    year=year,
+                    auto_estimate_growth=True,
+                    discount_rate=0.15,
+                    margin_of_safety=0.50,
+                    load_sec_data=False,
+                    load_earnings_data=False,
+                    config=quantitative_only(),
+                )
+
                 ai = result.get("ai_decision")
                 if not ai:
                     st.warning("Moat analysis returned no result.")
@@ -1000,136 +1233,11 @@ def _page_moat():
 
                 st.session_state["analysis_count"] += 1
 
-                # ── RAG Data Quality Indicator ────────────────────────────
-                avg_rel = ai.get("avg_relevance_score", 0.0)
-                total_src = ai.get("total_sources_used", 0)
-                tier = _get_data_quality_tier(avg_rel, total_src)
-
-                _QUALITY_MSG = {
-                    "high": (
-                        f"**{tier['label']}** — {total_src} relevant document sections "
-                        f"analysed (avg. relevance {avg_rel:.2f})."
-                    ),
-                    "medium": (
-                        f"**{tier['label']}** — {total_src} document section(s) analysed "
-                        f"(avg. relevance {avg_rel:.2f}). Result may be incomplete."
-                    ),
-                    "low": (
-                        f"**{tier['label']}** — Only {total_src} document section(s) found "
-                        f"(avg. relevance {avg_rel:.2f}). "
-                        "Enable 'Load SEC Filings' or load more data for a better result."
-                    ),
-                }
-                msg = _QUALITY_MSG[tier["level"]]
-                if tier["level"] == "high":
-                    st.success(msg)
-                elif tier["level"] == "medium":
-                    st.warning(msg)
-                else:
-                    st.error(msg)
-
-                # ── Business Model expander ───────────────────────────────
-                if bm_result and bm_result.get("status") == "success":
-                    with st.expander("📋 Business Model", expanded=True):
-                        st.markdown(bm_result["description"])
-                        if bm_result.get("sources_used", 0) > 0:
-                            st.caption(
-                                f"Sources used: {bm_result['sources_used']} document sections"
-                            )
-                    st.markdown("")
-
-                # ── Moat scores ───────────────────────────────────────────
                 st.subheader(f"Moat Results — {ticker} ({year})")
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Moat Decision", ai.get("decision", "N/A"))
-                c2.metric("Confidence", ai.get("confidence", "N/A"))
-                c3.metric("Overall Score", f"{ai.get('overall_score', 0)}/100")
-                c4.metric("Moat Strength", ai.get("moat_strength", "N/A"))
+                _render_moat_results(ticker, year, ai, bm_result=bm_result)
 
-                st.markdown("---")
-                st.markdown(f"**Reasoning:** {ai.get('reasoning', 'N/A')}")
-
-                if ai.get("red_flags"):
-                    st.warning(
-                        "**Red Flags Identified:**\n"
-                        + "\n".join(f"- {rf}" for rf in ai["red_flags"])
-                    )
-
-                # ── Quantitative Fundamentals ─────────────────────────────
-                st.markdown("---")
-                st.subheader("📊 Quantitative Fundamentals")
-                st.caption(
-                    "Financial health check — runs independently of RAG documents."
-                )
-
-                try:
-                    fund_results = check_fundamentals(ticker, year)
-                    STATUS_ICONS = {
-                        "OK": "✅",
-                        "Warning": "⚠️",
-                        "Flag": "🚩",
-                        "N/A": "—",
-                    }
-
-                    cols = st.columns(len(fund_results))
-                    for col, check in zip(cols, fund_results):
-                        icon = STATUS_ICONS.get(check["status"], "—")
-                        col.metric(
-                            label=f"{icon} {check['metric']}",
-                            value=check["value"],
-                            help=check["note"],
-                        )
-
-                    flags = [c for c in fund_results if c["status"] == "Flag"]
-                    warnings = [c for c in fund_results if c["status"] == "Warning"]
-                    if flags:
-                        st.error(
-                            "🚩 **Flag(s):** " + ", ".join(f["metric"] for f in flags)
-                        )
-                    if warnings:
-                        st.warning(
-                            "⚠️ **Warning(s):** "
-                            + ", ".join(w["metric"] for w in warnings)
-                        )
-                    if not flags and not warnings:
-                        st.success("✅ All fundamental checks passed")
-
-                except Exception as fe:
-                    log.warning(
-                        "[app][fundamentals_error] ticker=%s error=%s", ticker, fe
-                    )
-                    st.info("Could not load quantitative fundamentals.")
-
-                # ── Peer Comparison Table ─────────────────────────────────
-                st.markdown("---")
-                st.subheader("🏢 Peer Comparison")
-
-                with st.spinner("Loading peer metrics..."):
-                    try:
-                        peer_df = get_peer_metrics(ticker, year)
-
-                        display_df = peer_df.drop(columns=["_is_subject"])
-
-                        def _highlight_subject(row):
-                            is_subj = peer_df.loc[row.name, "_is_subject"]
-                            return (
-                                ["font-weight: bold; background-color: #e8f5e9"] * len(row)
-                                if is_subj else [""] * len(row)
-                            )
-
-                        st.dataframe(
-                            display_df.style.apply(_highlight_subject, axis=1),
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-                        st.caption(
-                            "Bold row = subject ticker. "
-                            "MOS% = upside to fair value (positive = undervalued). "
-                            "FMP data only · no RAG."
-                        )
-                    except Exception as pe:
-                        log.warning("[app][peers_error] ticker=%s error=%s", ticker, pe)
-                        st.info("Peer comparison table could not be loaded.")
+                with st.expander("📊 Full Pipeline Overview", expanded=False):
+                    _render_quant_pipeline(quant_result, mos_pct=0.50)
 
                 log.info(
                     "[app][moat_complete] ticker=%s decision=%s score=%s",
@@ -1168,26 +1276,6 @@ def _page_overview():
     load_sec = col3.checkbox("Load SEC Filings", value=False, key="ov_sec")
     load_earnings = col4.checkbox(
         "Load Earnings Transcripts", value=False, key="ov_earn"
-    )
-
-    st.markdown("---")
-    st.markdown("**Score Weights**")
-    st.caption("Quant sub-weights — must sum to 100")
-    wc1, wc2, wc3 = st.columns(3)
-    w_mos = wc1.slider("MOS %", 0, 100, 34, 1, key="ov_w_mos")
-    w_tencap = wc2.slider("TenCap %", 0, 100, 33, 1, key="ov_w_tencap")
-    w_pbt = wc3.slider("PBT %", 0, 100, 33, 1, key="ov_w_pbt")
-    if (w_mos + w_tencap + w_pbt) != 100:
-        st.warning(f"Quant weights sum to {w_mos + w_tencap + w_pbt} — must be 100")
-
-    quant_vs_moat = st.slider(
-        "Quant vs Moat (%)",
-        0,
-        100,
-        60,
-        10,
-        key="ov_qvm",
-        help="60 = 60% Quant Score / 40% Moat Score",
     )
 
     if st.button("Run Full Analysis", type="primary", key="ov_run"):
@@ -1250,11 +1338,13 @@ def _page_overview():
                         parts.append(f"Analyst: {ana*100:.1f}%")
                     st.caption("  |  ".join(parts))
 
-                # Combined Score — 3-Score Model (Quality 40% + Valuation 20% + Moat 40%)
+                # ── 3-Score Model ─────────────────────────────────────────
                 ai = result.get("ai_decision") or {}
                 overall = ai.get("overall_score")
                 if overall is not None:
                     st.subheader("🎯 Combined Investment Score")
+
+                    # Row 1: the three component scores + combined
                     cs1, cs2, cs3, cs4 = st.columns(4)
                     cs1.metric(
                         "Quality Score (40%)",
@@ -1276,104 +1366,54 @@ def _page_overview():
                         f"{overall} / 100",
                         help="Quality×0.40 + Valuation×0.20 + Moat×0.40 − Red Flag Penalty",
                     )
+
+                    # Row 2: moat strength + red flag count
+                    ms1, ms2, ms3, ms4 = st.columns(4)
+                    ms1.metric(
+                        "Moat Strength",
+                        ai.get("moat_strength", "N/A"),
+                        help="Wide ≥ 65% moat score · Narrow ≥ 40% · None below 40%",
+                    )
+                    red_flag_count = len(ai.get("red_flags") or [])
+                    ms2.metric(
+                        "Red Flags",
+                        red_flag_count,
+                        help="Each flag reduces Combined Score by 5 pts (max −25)",
+                    )
+                    ms3.metric("Confidence", ai.get("confidence", "N/A"))
+
+                    # Decision banner
                     decision = ai.get("decision", "N/A")
-                    red_flags = len(ai.get("red_flags") or [])
+                    _DECISION_RULES = {
+                        "STRONG BUY": "Score ≥ 80 and 0 red flags",
+                        "BUY":        "Score ≥ 70 and ≤ 1 red flag",
+                        "HOLD":       "Score ≥ 50",
+                        "PASS":       "Score < 50",
+                    }
+                    rule = _DECISION_RULES.get(decision, "—")
                     rec_fn = {
                         "STRONG BUY": st.success,
-                        "BUY": st.success,
-                        "HOLD": st.warning,
-                        "PASS": st.error,
+                        "BUY":        st.success,
+                        "HOLD":       st.warning,
+                        "PASS":       st.error,
                     }.get(decision, st.info)
-                    rec_fn(f"**{decision}** — Combined={overall} | Red Flags={red_flags}")
+                    rec_fn(f"**{decision}** — {rule}")
+                    st.caption(
+                        f"Decision rule applied: Combined={overall} | "
+                        f"Red Flags={red_flag_count} → {decision}"
+                    )
+
                     st.divider()
 
-                rec = result.get("final_recommendation", "N/A")
-                _show_recommendation(f"Pipeline Recommendation: {rec}")
+                with st.expander("🤖 AI Moat Analysis", expanded=False):
+                    _render_moat_results(ticker, year, ai, bm_result=None)
 
-                # MOS
-                if result.get("mos_result"):
-                    r = result["mos_result"]
-                    st.subheader("🛡️ Margin of Safety")
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("Fair Value", f"${r.get('Fair Value Today', 0):.2f}")
-                    c2.metric("MOS Price", f"${r.get('MOS Price', 0):.2f}")
-                    c3.metric(
-                        "Current Price", f"${r.get('Current Stock Price', 0):.2f}"
-                    )
-                    c4.metric("EPS", f"${r.get('EPS_now', 0):.2f}")
-                    st.info(
-                        f"Price vs Fair Value: {r.get('Price vs Fair Value', 'N/A')} | "
-                        f"Growth Rate: {r.get('Growth Rate', 0):.1f}% | "
-                        f"MOS: {r.get('Margin of Safety', 'N/A')}"
-                    )
-                    st.divider()
-
-                # TenCap
-                if result.get("tencap_result"):
-                    r = result["tencap_result"]
-                    st.subheader("🔟 TenCap")
-                    c1, c2, c3 = st.columns(3)
-                    tc_mos_price = r.get("ten_cap_fair_value", 0) * (1 - mos_pct)
-                    c1.metric(
-                        f"TenCap Buy Price ({mos_pct * 100:.0f}% MOS)",
-                        f"${tc_mos_price:.2f}",
-                    )
-                    c2.metric(
-                        "TenCap Fair Value", f"${r.get('ten_cap_fair_value', 0):.2f}"
-                    )
-                    c3.metric(
-                        "Current Price", f"${r.get('current_stock_price', 0):.2f}"
-                    )
-                    st.divider()
-
-                # PBT
-                if result.get("pbt_result"):
-                    r = result["pbt_result"]
-                    st.subheader("⏱️ Payback Time")
-                    c1, c2, c3 = st.columns(3)
-                    pbt_mos_price = r.get("fair_value", 0) * (1 - mos_pct)
-                    c1.metric(
-                        f"Buy Price ({mos_pct * 100:.0f}% MOS)", f"${pbt_mos_price:.2f}"
-                    )
-                    c2.metric("Fair Value (2×)", f"${r.get('fair_value', 0):.2f}")
-                    c3.metric(
-                        "Current Price", f"${r.get('current_stock_price', 0):.2f}"
-                    )
-                    st.divider()
-
-                # Profitability
-                if result.get("profitability_result"):
-                    r = result["profitability_result"]
-                    if not r.get("error"):
-
-                        def pct(v):
-                            return f"{v * 100:.1f}%" if v is not None else "N/A"
-
-                        st.subheader("💰 Profitability")
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("ROE", pct(r.get("roe")))
-                        c2.metric("ROA", pct(r.get("roa")))
-                        c3.metric("ROIC", pct(r.get("roic")))
-                        c4.metric("Net Margin", pct(r.get("net_margin")))
-                        st.divider()
-
-                # Moat
-                if result.get("ai_decision"):
-                    ai = result["ai_decision"]
-                    st.subheader("🤖 AI Moat")
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("Decision", ai.get("decision", "N/A"))
-                    c2.metric("Confidence", ai.get("confidence", "N/A"))
-                    c3.metric("Overall Score", f"{ai.get('overall_score', 0)}/100")
-                    c4.metric("Moat Strength", ai.get("moat_strength", "N/A"))
-                    st.markdown(f"**Reasoning:** {ai.get('reasoning', 'N/A')}")
-                    if ai.get("red_flags"):
-                        st.warning("**Red Flags:** " + " · ".join(ai["red_flags"]))
+                _render_quant_pipeline(result, mos_pct)
 
                 log.info(
                     "[app][overview_complete] ticker=%s recommendation=%s",
                     ticker,
-                    rec,
+                    result.get("final_recommendation", "N/A"),
                 )
 
             except Exception as e:

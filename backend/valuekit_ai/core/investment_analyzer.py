@@ -58,6 +58,16 @@ class InvestmentDecision:
             "red_flags": self.moat_analysis.red_flags,
             "avg_relevance_score": self.moat_analysis.avg_relevance_score,
             "total_sources_used": self.moat_analysis.total_sources_used,
+            "moat_details": {
+                key: {
+                    "name": ms.name,
+                    "score": ms.score,          # 0–10
+                    "confidence": ms.confidence,
+                    "sources_used": ms.sources_used,
+                    "evidence": ms.evidence,
+                }
+                for key, ms in self.moat_analysis.moats.items()
+            },
             "quantitative_metrics": self.quantitative_metrics,
             "pipeline_version": PIPELINE_VERSION,
         }

@@ -14,21 +14,21 @@ flowchart TD
     subgraph QUANT ["📊 QUANTITATIVE ANALYSE"]
         direction TB
         Q1[Finanzdaten laden via FMP API]
-        Q1 --> Q2["① Quality Score\nROIC · FCF Yield · Net Margin · CAGR\n→ Score 0–100"]
-        Q2 --> Q3["⑥ Wachstumsrate: 3-Quellen-Konsens\nEigener CAGR + FMP Analyst Estimates + Cap 25%\n→ Gewichteter Durchschnitt\n→ Anzeige: woher kommt die Zahl"]
-        Q3 --> Q4["② Valuation Score\nMOS · TenCap · PBT\nPreis vs. Fair Value je Methode\n→ Score 0–100\n⚠ Untergewichtet: Qualitätsunternehmen\nsind strukturell teuer"]
-        Q4 --> Q5["③ Quantitative Fundamentals\nDebt/Equity · FCF-Trend · Margen-Trend\nCurrent Ratio\n→ Red Flag Penalty: −5 pro Flag, max −25"]
+        Q1 --> Q2["Quality Score\nROIC · FCF Yield · Net Margin · CAGR\n→ Score 0–100"]
+        Q2 --> Q3["Wachstumsrate: 3-Quellen-Konsens\nEigener CAGR + FMP Analyst Estimates + Cap 25%\n→ Gewichteter Durchschnitt\n→ Anzeige: woher kommt die Zahl"]
+        Q3 --> Q4["Valuation Score\nMOS · TenCap · PBT\nPreis vs. Fair Value je Methode\n→ Score 0–100\n⚠ Untergewichtet: Qualitätsunternehmen\nsind strukturell teuer"]
+        Q4 --> Q5["Quantitative Fundamentals\nDebt/Equity · FCF-Trend · Margen-Trend\nCurrent Ratio\n→ Red Flag Penalty: −5 pro Flag, max −25"]
     end
 
     subgraph QUAL ["🔍 QUALITATIVE ANALYSE"]
         direction TB
         L1[Dokumente laden\nSEC 10-K Filings · Earnings Transcripts]
-        L1 --> L7{"⑦ Data Quality Check\nAnzahl Sources · Relevance Score\n≥ Threshold?"}
+        L1 --> L7{"Data Quality Check\nAnzahl Sources · Relevance Score\n≥ Threshold?"}
         L7 -- "Nein" --> L7W["⚠ Warnung anzeigen\nAnalyse basiert auf wenigen Quellen\nErgebnis mit Vorsicht interpretieren"]
         L7 -- "Ja" --> L2
         L7W --> L2
         L2["Business Model Beschreibung\nvia RAG generieren\n→ Kontext für Moat-Analyse"]
-        L2 --> L3["④ Moat Score\nFür jeden aktivierten Moat-Typ RAG-Analyse:\nBrand Power · Switching Costs\nNetwork Effects · Cost Advantages\nEfficient Scale\n→ Moat Strength: None / Narrow / Wide\n→ Score 0–100"]
+        L2 --> L3["Moat Score\nFür jeden aktivierten Moat-Typ RAG-Analyse:\nBrand Power · Switching Costs\nNetwork Effects · Cost Advantages\nEfficient Scale\n→ Moat Strength: None / Narrow / Wide\n→ Score 0–100"]
         L3 --> L4["Qualitative Risks\nWettbewerb · Regulierung · Management\nvia RAG aus Dokumenten\n→ Red Flag Penalty: −5 pro Flag, max −25"]
     end
 
@@ -48,7 +48,7 @@ flowchart TD
 
     P["InvestmentDecision ausgeben\nDecision · Confidence\nQuality Score · Valuation Score · Moat Score\nCombined Score · Reasoning"]
 
-    P --> PEERS["⑤ Peer Vergleich\nFMP + Claude Fallback → Peer-Liste\nautom. Vergleichstabelle:\nTicker · ROIC · Net Margin · CAGR · MOS%\n→ kein RAG, nur FMP-Daten"]
+    P --> PEERS["Peer Vergleich\nFMP + Claude Fallback → Peer-Liste\nautom. Vergleichstabelle:\nTicker · ROIC · Net Margin · CAGR · MOS%\n→ kein RAG, nur FMP-Daten"]
 
     PEERS --> R([Dashboard rendern])
 
