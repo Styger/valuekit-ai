@@ -275,7 +275,9 @@ class MoatAnalyzer:
 
     # ── Business Model ────────────────────────────────────────────────────────
 
-    def analyze_business_model(self, ticker: str) -> Dict:
+    def analyze_business_model(
+        self, ticker: str, top_k: Optional[int] = None, temperature: Optional[float] = None
+    ) -> Dict:
         """
         Generate a concise business model description using RAG.
 
@@ -301,6 +303,8 @@ class MoatAnalyzer:
             query=query,
             quantitative_data={"ticker": ticker},
             max_tokens=512,
+            top_k=top_k,
+            temperature=temperature,
         )
 
         if result["status"] == "success":
@@ -351,7 +355,12 @@ class MoatAnalyzer:
     # ── Single Moat ───────────────────────────────────────────────────────────
 
     def analyze_single_moat(
-        self, ticker: str, moat_key: str, moat_config: Dict
+        self,
+        ticker: str,
+        moat_key: str,
+        moat_config: Dict,
+        top_k: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> MoatScore:
         """
         Analyze a single moat type
@@ -369,6 +378,8 @@ class MoatAnalyzer:
             query=query,
             quantitative_data={"ticker": ticker},
             scoring_rules=_MOAT_SCORING_INSTRUCTION,
+            top_k=top_k,
+            temperature=temperature,
         )
 
         if result["status"] != "success":
@@ -519,7 +530,11 @@ class MoatAnalyzer:
         return evidence[:5]
 
     def detect_red_flags(
-        self, ticker: str, enabled_categories: List[str] = None
+        self,
+        ticker: str,
+        enabled_categories: List[str] = None,
+        top_k: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> List[str]:
         """
         Detect investment red flags
@@ -545,6 +560,8 @@ class MoatAnalyzer:
             result = self.rag.analyze_with_rag(
                 query=query,
                 quantitative_data={"ticker": ticker},
+                top_k=top_k,
+                temperature=temperature,
             )
 
             if result["status"] == "success":
@@ -573,7 +590,11 @@ class MoatAnalyzer:
         return red_flags
 
     def analyze_moats(
-        self, ticker: str, config: Optional[AnalysisConfig] = None
+        self,
+        ticker: str,
+        config: Optional[AnalysisConfig] = None,
+        top_k: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> MoatAnalysis:
         log.info(
             "[moat_analyzer][start] ticker=%s pipeline_version=%s",
@@ -597,7 +618,7 @@ class MoatAnalyzer:
             if moat_key not in self.MOAT_TYPES:
                 continue
             moat_config = self.MOAT_TYPES[moat_key]
-            moat_score = self.analyze_single_moat(ticker, moat_key, moat_config)
+            moat_score = self.analyze_single_moat(ticker, moat_key, moat_config, top_k=top_k, temperature=temperature)
             moats[moat_key] = moat_score
             total_score += moat_score.score
             if moat_score.sources_used > 0:
@@ -610,7 +631,7 @@ class MoatAnalyzer:
             else 0.0
         )
 
-        red_flags = self.detect_red_flags(ticker, enabled_rf)
+        red_flags = self.detect_red_flags(ticker, enabled_rf, top_k=top_k, temperature=temperature)
 
         max_possible = len(moats) * 10
         score_pct = (total_score / max_possible * 100) if max_possible > 0 else 0

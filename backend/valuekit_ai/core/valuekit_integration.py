@@ -108,6 +108,8 @@ class ValueKitAnalyzer:
         load_news_data: bool = False,
         load_yahoo_info_data: bool = False,
         config: Optional[AnalysisConfig] = None,
+        top_k: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> Dict:
         """
         Complete stock analysis combining all ValueKit components
@@ -252,6 +254,8 @@ class ValueKitAnalyzer:
                 load_news_data=load_news_data,
                 load_yahoo_info_data=load_yahoo_info_data,
                 config=config,
+                top_k=top_k,
+                temperature=temperature,
             )
 
         final_recommendation = self._combine_recommendations(mos_result, ai_decision)

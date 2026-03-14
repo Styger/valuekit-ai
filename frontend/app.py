@@ -16,7 +16,13 @@ root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from backend.valuekit_ai.config.config import PIPELINE_VERSION
+from backend.valuekit_ai.config.config import (
+    PIPELINE_VERSION,
+    RAGConfig,
+    DEFAULT_DISCOUNT_RATE,
+    DEFAULT_MARGIN_OF_SAFETY,
+    DEFAULT_BASE_YEAR,
+)
 from backend.valuekit_ai.config.analysis_config import AnalysisConfig
 from backend.valuekit_ai.core.valuekit_integration import ValueKitAnalyzer
 from backend.logic.mos import calculate_mos_value_from_ticker
@@ -143,6 +149,10 @@ def _init_session_state():
         st.session_state["analysis_count"] = 0
     if "ov_result" not in st.session_state:
         st.session_state["ov_result"] = None
+    if "pipeline_top_k" not in st.session_state:
+        st.session_state["pipeline_top_k"] = RAGConfig.TOP_K_RESULTS
+    if "pipeline_temperature" not in st.session_state:
+        st.session_state["pipeline_temperature"] = RAGConfig.LLM_TEMPERATURE
 
 
 def _check_session_limit():
@@ -222,6 +232,88 @@ def _invalidate_ticker_cache(tickers: set, dtype: str, cache) -> None:
                 dtype,
                 k,
             )
+
+
+def _render_pipeline_config():
+    """Read-only sidebar expander showing all pipeline configuration constants."""
+    with st.sidebar.expander("⚙️ Pipeline Configuration", expanded=False):
+        # ── RAG / Retrieval ───────────────────────────────────────────────────
+        st.markdown("**RAG / Retrieval**")
+        st.table(
+            {
+                "Parameter": ["Embedding model", "Chunk size", "Chunk overlap"],
+                "Value": [
+                    RAGConfig.EMBEDDING_MODEL,
+                    RAGConfig.CHUNK_SIZE,
+                    RAGConfig.CHUNK_OVERLAP,
+                ],
+            }
+        )
+        top_k_val = st.number_input(
+            "Top-k chunks",
+            min_value=1,
+            max_value=20,
+            step=1,
+            value=st.session_state["pipeline_top_k"],
+            key="pipeline_top_k_input",
+        )
+        if top_k_val != st.session_state["pipeline_top_k"]:
+            log.info(
+                "[pipeline_config][override] param=top_k value=%d default=%d",
+                top_k_val,
+                RAGConfig.TOP_K_RESULTS,
+            )
+            st.session_state["pipeline_top_k"] = top_k_val
+
+        # ── LLM ──────────────────────────────────────────────────────────────
+        st.markdown("**LLM**")
+        st.table(
+            {
+                "Parameter": ["Model", "Max tokens"],
+                "Value": [RAGConfig.LLM_MODEL, RAGConfig.LLM_MAX_TOKENS],
+            }
+        )
+        temperature_val = st.slider(
+            "Temperature",
+            min_value=0.0,
+            max_value=1.0,
+            step=0.1,
+            value=float(st.session_state["pipeline_temperature"]),
+            key="pipeline_temperature_input",
+        )
+        if temperature_val != st.session_state["pipeline_temperature"]:
+            log.info(
+                "[pipeline_config][override] param=temperature value=%.1f default=%.1f",
+                temperature_val,
+                RAGConfig.LLM_TEMPERATURE,
+            )
+            st.session_state["pipeline_temperature"] = temperature_val
+
+        # ── Pipeline ─────────────────────────────────────────────────────────
+        st.markdown("**Pipeline**")
+        st.table(
+            {
+                "Parameter": ["Pipeline version", "Cache enabled"],
+                "Value": [PIPELINE_VERSION, "Yes"],
+            }
+        )
+
+        # ── Valuation Defaults ────────────────────────────────────────────────
+        st.markdown("**Valuation Defaults**")
+        st.table(
+            {
+                "Parameter": [
+                    "Default discount rate",
+                    "Default MOS",
+                    "Default base year",
+                ],
+                "Value": [
+                    f"{int(DEFAULT_DISCOUNT_RATE * 100)}%",
+                    f"{int(DEFAULT_MARGIN_OF_SAFETY * 100)}%",
+                    DEFAULT_BASE_YEAR,
+                ],
+            }
+        )
 
 
 def _render_index_manager():
@@ -349,6 +441,7 @@ def _render_sidebar() -> str:
 
     st.sidebar.markdown("---")
     _render_index_manager()
+    _render_pipeline_config()
 
     return selected
 
@@ -1353,7 +1446,11 @@ def _page_moat():
                 bm_result = None
                 if load_sec or load_earnings or load_news or load_yahoo_info:
                     bm_result = (
-                        analyzer.ai_analyzer.moat_analyzer.analyze_business_model(ticker)
+                        analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
+                            ticker,
+                            top_k=st.session_state["pipeline_top_k"],
+                            temperature=st.session_state["pipeline_temperature"],
+                        )
                     )
 
                 # Moat analysis
@@ -1368,6 +1465,8 @@ def _page_moat():
                     load_news_data=False,       # already loaded above
                     load_yahoo_info_data=False, # already loaded above
                     config=config,
+                    top_k=st.session_state["pipeline_top_k"],
+                    temperature=st.session_state["pipeline_temperature"],
                 )
 
                 # Quantitative pipeline (no moat re-run; FMP data is cached)
@@ -1487,6 +1586,14 @@ def _page_overview():
                         )
 
                 analyzer = ValueKitAnalyzer()
+
+                # Business Model — always attempt; returns status=error if no docs indexed
+                ov_bm_result = analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
+                    ticker,
+                    top_k=st.session_state["pipeline_top_k"],
+                    temperature=st.session_state["pipeline_temperature"],
+                )
+
                 result = analyzer.analyze_stock_complete(
                     ticker=ticker,
                     year=year,
@@ -1498,6 +1605,8 @@ def _page_overview():
                     load_news_data=False,      # already loaded above
                     load_yahoo_info_data=False, # already loaded above
                     config=config,
+                    top_k=st.session_state["pipeline_top_k"],
+                    temperature=st.session_state["pipeline_temperature"],
                 )
 
                 st.session_state["analysis_count"] += 1
@@ -1507,6 +1616,7 @@ def _page_overview():
                     "ticker": ticker,
                     "year": year,
                     "mos_pct": mos_pct,
+                    "bm_result": ov_bm_result,
                 }
 
                 log.info(
@@ -1522,10 +1632,11 @@ def _page_overview():
     # ── Render last result (persists across reruns, e.g. from sidebar refresh) ──
     _ov = st.session_state.get("ov_result")
     if _ov:
-        result  = _ov["result"]
-        ticker  = _ov["ticker"]
-        year    = _ov["year"]
-        mos_pct = _ov["mos_pct"]
+        result    = _ov["result"]
+        ticker    = _ov["ticker"]
+        year      = _ov["year"]
+        mos_pct   = _ov["mos_pct"]
+        ov_bm_result = _ov.get("bm_result")
 
         # Growth Rate transparency (consensus source)
         gc = result.get("growth_consensus")
@@ -1615,7 +1726,7 @@ def _page_overview():
             st.divider()
 
         with st.expander("🤖 AI Moat Analysis", expanded=False):
-            _render_moat_results(ticker, year, ai, bm_result=None)
+            _render_moat_results(ticker, year, ai, bm_result=ov_bm_result)
 
         _render_quant_pipeline(result, mos_pct)
 

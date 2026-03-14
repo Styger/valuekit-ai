@@ -294,6 +294,8 @@ class IntegratedAnalyzer:
         load_news_data: bool = False,
         load_yahoo_info_data: bool = False,
         config: Optional[AnalysisConfig] = None,
+        top_k: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> InvestmentDecision:
         """
         Run complete investment analysis.
@@ -368,7 +370,7 @@ class IntegratedAnalyzer:
         )
 
         if config is None or config.run_moat_analysis:
-            moat_analysis = self.moat_analyzer.analyze_moats(ticker, config=config)
+            moat_analysis = self.moat_analyzer.analyze_moats(ticker, config=config, top_k=top_k, temperature=temperature)
         else:
             moat_analysis = MoatAnalysis(
                 ticker=ticker,

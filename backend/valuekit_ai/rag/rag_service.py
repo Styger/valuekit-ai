@@ -77,8 +77,10 @@ class RAGService:
         self,
         query: str,
         quantitative_data: Optional[Dict[str, Any]] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = RAGConfig.LLM_MAX_TOKENS,
         scoring_rules: Optional[str] = None,
+        top_k: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Perform RAG-enhanced analysis
@@ -99,6 +101,9 @@ class RAGService:
         # Extract ticker from quantitative_data so the vector store can apply
         # a metadata where-filter (ticker == requested ticker) at ChromaDB level.
         ticker = (quantitative_data or {}).get("ticker") or None
+
+        _top_k = top_k if top_k is not None else self.config.TOP_K_RESULTS
+        _temperature = temperature if temperature is not None else self.config.LLM_TEMPERATURE
 
         raw_docs = self.vector_store.similarity_search_with_score(
             query,
@@ -124,8 +129,8 @@ class RAGService:
             ticker, len(unique_docs), len(raw_docs) - len(unique_docs),
         )
 
-        # Cap context to TOP_K_RESULTS to keep prompt size bounded
-        retrieved_docs = unique_docs[: self.config.TOP_K_RESULTS]
+        # Cap context to _top_k to keep prompt size bounded
+        retrieved_docs = unique_docs[:_top_k]
         context = self._format_context([doc for doc, score in retrieved_docs])
         prompt = self._build_analysis_prompt(query, context, quantitative_data, scoring_rules)
 
@@ -133,7 +138,7 @@ class RAGService:
             message = self.client.messages.create(
                 model=self.config.LLM_MODEL,
                 max_tokens=max_tokens,
-                temperature=self.config.LLM_TEMPERATURE,
+                temperature=_temperature,
                 messages=[{"role": "user", "content": prompt}],
             )
 
