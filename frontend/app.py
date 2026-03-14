@@ -239,7 +239,7 @@ def _render_pipeline_config():
     with st.sidebar.expander("⚙️ Pipeline Configuration", expanded=False):
         # ── RAG / Retrieval ───────────────────────────────────────────────────
         st.markdown("**RAG / Retrieval**")
-        _df_rag = pd.DataFrame(
+        st.table(
             {
                 "Parameter": ["Embedding model", "Chunk size", "Chunk overlap"],
                 "Value": [
@@ -249,8 +249,6 @@ def _render_pipeline_config():
                 ],
             }
         )
-        _df_rag["Value"] = _df_rag["Value"].astype(str)
-        st.table(_df_rag)
         top_k_val = st.number_input(
             "Top-k chunks",
             min_value=1,
@@ -269,14 +267,12 @@ def _render_pipeline_config():
 
         # ── LLM ──────────────────────────────────────────────────────────────
         st.markdown("**LLM**")
-        _df_llm = pd.DataFrame(
+        st.table(
             {
                 "Parameter": ["Model", "Max tokens"],
                 "Value": [RAGConfig.LLM_MODEL, RAGConfig.LLM_MAX_TOKENS],
             }
         )
-        _df_llm["Value"] = _df_llm["Value"].astype(str)
-        st.table(_df_llm)
         temperature_val = st.slider(
             "Temperature",
             min_value=0.0,
@@ -295,18 +291,16 @@ def _render_pipeline_config():
 
         # ── Pipeline ─────────────────────────────────────────────────────────
         st.markdown("**Pipeline**")
-        _df_pipeline = pd.DataFrame(
+        st.table(
             {
                 "Parameter": ["Pipeline version", "Cache enabled"],
                 "Value": [PIPELINE_VERSION, "Yes"],
             }
         )
-        _df_pipeline["Value"] = _df_pipeline["Value"].astype(str)
-        st.table(_df_pipeline)
 
         # ── Valuation Defaults ────────────────────────────────────────────────
         st.markdown("**Valuation Defaults**")
-        _df_val = pd.DataFrame(
+        st.table(
             {
                 "Parameter": [
                     "Default discount rate",
@@ -320,8 +314,6 @@ def _render_pipeline_config():
                 ],
             }
         )
-        _df_val["Value"] = _df_val["Value"].astype(str)
-        st.table(_df_val)
 
 
 def _render_index_manager():
