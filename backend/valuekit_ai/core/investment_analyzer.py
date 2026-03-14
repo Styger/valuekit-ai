@@ -292,6 +292,7 @@ class IntegratedAnalyzer:
         load_sec_data: bool = False,
         load_earnings_data: bool = False,
         load_news_data: bool = False,
+        load_yahoo_info_data: bool = False,
         config: Optional[AnalysisConfig] = None,
     ) -> InvestmentDecision:
         """
@@ -307,6 +308,7 @@ class IntegratedAnalyzer:
             load_sec_data: Reload SEC 10-K data
             load_earnings_data: Load earnings transcripts
             load_news_data: Load recent Yahoo Finance news articles
+            load_yahoo_info_data: Load Yahoo Finance company metadata (sector, industry, summary)
             config: AnalysisConfig (controls which components run)
 
         Returns:
@@ -314,8 +316,9 @@ class IntegratedAnalyzer:
         """
         log.info(
             "[investment_analyzer][start] ticker=%s pipeline_version=%s "
-            "load_sec=%s load_earnings=%s load_news=%s",
-            ticker, PIPELINE_VERSION, load_sec_data, load_earnings_data, load_news_data,
+            "load_sec=%s load_earnings=%s load_news=%s load_yahoo_info=%s",
+            ticker, PIPELINE_VERSION, load_sec_data, load_earnings_data,
+            load_news_data, load_yahoo_info_data,
         )
 
         if load_sec_data:
@@ -343,6 +346,16 @@ class IntegratedAnalyzer:
             if news_result.get("status") != "success":
                 log.warning(
                     "[investment_analyzer][news_load_failed] ticker=%s", ticker
+                )
+
+        if load_yahoo_info_data:
+            from backend.valuekit_ai.data_pipeline.load_sec_data import (
+                load_yahoo_info_data as _load_yahoo_info,
+            )
+            info_result = _load_yahoo_info(ticker)
+            if info_result.get("status") != "success":
+                log.warning(
+                    "[investment_analyzer][yahoo_info_load_failed] ticker=%s", ticker
                 )
 
         # Calculate the three scores

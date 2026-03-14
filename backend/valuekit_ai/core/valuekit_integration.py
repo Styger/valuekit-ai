@@ -106,6 +106,7 @@ class ValueKitAnalyzer:
         load_sec_data: bool = False,
         load_earnings_data: bool = False,
         load_news_data: bool = False,
+        load_yahoo_info_data: bool = False,
         config: Optional[AnalysisConfig] = None,
     ) -> Dict:
         """
@@ -121,6 +122,7 @@ class ValueKitAnalyzer:
             load_sec_data: Reload SEC filings
             load_earnings_data: Load earnings transcripts
             load_news_data: Load recent Yahoo Finance news articles
+            load_yahoo_info_data: Load Yahoo Finance company metadata (sector, industry, summary)
             config: AnalysisConfig (controls which components run)
 
         Returns:
@@ -248,6 +250,7 @@ class ValueKitAnalyzer:
                 load_sec_data=load_sec_data,
                 load_earnings_data=load_earnings_data,
                 load_news_data=load_news_data,
+                load_yahoo_info_data=load_yahoo_info_data,
                 config=config,
             )
 

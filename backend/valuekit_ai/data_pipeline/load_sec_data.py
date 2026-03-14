@@ -4,6 +4,7 @@ Integration: Load SEC Edgar data into RAG system
 
 from backend.valuekit_ai.data_pipeline.sec_fetcher import fetch_and_prepare_for_rag
 from backend.valuekit_ai.data_pipeline.yahoo_news_fetcher import fetch_yahoo_news
+from backend.valuekit_ai.data_pipeline.yahoo_info_fetcher import fetch_yahoo_info
 from backend.valuekit_ai.rag.rag_service import get_rag_service
 from langchain_core.documents import Document
 
@@ -16,6 +17,38 @@ log = logging.getLogger(__name__)
 root_dir = Path(__file__).resolve().parent.parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
+
+
+def _delete_ticker_chunks(ticker: str, document_type: str) -> int:
+    """
+    Delete all existing RAG chunks for a given ticker + document_type.
+    Called before reloading a data source to prevent duplicate chunks.
+
+    Returns: number of chunks deleted.
+    """
+    try:
+        rag = get_rag_service()
+        col = rag.vector_store.vectorstore._collection
+        existing = col.get(
+            where={"$and": [{"ticker": {"$eq": ticker}}, {"document_type": {"$eq": document_type}}]},
+            include=[],
+        )
+        n = len(existing["ids"])
+        if n > 0:
+            col.delete(
+                where={"$and": [{"ticker": {"$eq": ticker}}, {"document_type": {"$eq": document_type}}]}
+            )
+            log.info(
+                "[load_sec_data][pre_delete] ticker=%s document_type=%s deleted=%d",
+                ticker, document_type, n,
+            )
+        return n
+    except Exception as e:
+        log.warning(
+            "[load_sec_data][pre_delete_error] ticker=%s document_type=%s error=%s",
+            ticker, document_type, e,
+        )
+        return 0
 
 
 def load_company_data(ticker: str, years: int = 3) -> dict:
@@ -34,6 +67,9 @@ def load_company_data(ticker: str, years: int = 3) -> dict:
     log.info(
         "[load_sec_data][start] ticker=%s years=%d", ticker, years
     )
+
+    # Delete existing chunks for this ticker/type before reloading
+    _delete_ticker_chunks(ticker, "10-K")
 
     # Step 1: Fetch SEC documents (multi-year)
     raw_docs = fetch_and_prepare_for_rag(ticker, limit=years)
@@ -98,6 +134,9 @@ def load_news_data(ticker: str, max_articles: int = 10) -> dict:
     """
     log.info("[load_sec_data][news_start] ticker=%s max_articles=%d", ticker, max_articles)
 
+    # Delete existing chunks for this ticker/type before reloading
+    _delete_ticker_chunks(ticker, "news_article")
+
     raw_docs = fetch_yahoo_news(ticker, max_articles=max_articles)
 
     if not raw_docs:
@@ -121,6 +160,76 @@ def load_news_data(ticker: str, max_articles: int = 10) -> dict:
         stats = rag.get_knowledge_base_stats()
         log.info(
             "[load_sec_data][news_complete] ticker=%s documents=%d chunks=%d kb_total=%d",
+            ticker,
+            result["documents_added"],
+            result["chunks_created"],
+            stats["count"],
+        )
+        return {
+            "status": "success",
+            "ticker": ticker,
+            "documents_added": result["documents_added"],
+            "chunks_created": result["chunks_created"],
+            "total_kb_size": stats["count"],
+        }
+    else:
+        return {"status": "error", "message": result.get("error", "Unknown error")}
+
+
+def load_yahoo_info_data(ticker: str) -> dict:
+    """
+    Fetch Yahoo Finance company metadata for `ticker` and load it into
+    the RAG vector store as a structured profile document.
+
+    Args:
+        ticker: Stock ticker
+
+    Returns:
+        Status dict with keys: status, ticker, documents_added, chunks_created,
+        total_kb_size
+    """
+    log.info("[load_sec_data][yahoo_info_start] ticker=%s", ticker)
+
+    # Delete existing chunks for this ticker/type before reloading
+    _delete_ticker_chunks(ticker, "company_info")
+
+    info = fetch_yahoo_info(ticker)
+    if not info:
+        log.warning("[load_sec_data][yahoo_info_no_data] ticker=%s", ticker)
+        return {"status": "error", "message": f"No company info found for {ticker}"}
+
+    # Format the metadata dict as a structured text document for RAG ingestion
+    _field_labels = {
+        "sector": "Sector",
+        "industry": "Industry",
+        "fullTimeEmployees": "Full-Time Employees",
+        "marketCap": "Market Cap",
+        "trailingPE": "Trailing P/E",
+        "returnOnEquity": "Return on Equity",
+        "grossMargins": "Gross Margins",
+        "longBusinessSummary": "Business Summary",
+    }
+    lines = [f"Company Profile: {ticker}"]
+    for field, label in _field_labels.items():
+        value = info.get(field)
+        if value is not None:
+            lines.append(f"{label}: {value}")
+
+    text = "\n".join(lines)
+    metadata = {
+        "ticker": ticker,
+        "document_type": "company_info",
+        "source": "yahoo_finance",
+    }
+
+    documents = [Document(page_content=text, metadata=metadata)]
+    rag = get_rag_service()
+    result = rag.add_financial_documents(documents)
+
+    if result["status"] == "success":
+        stats = rag.get_knowledge_base_stats()
+        log.info(
+            "[load_sec_data][yahoo_info_complete] ticker=%s documents=%d chunks=%d kb_total=%d",
             ticker,
             result["documents_added"],
             result["chunks_created"],

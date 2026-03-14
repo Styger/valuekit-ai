@@ -31,7 +31,7 @@ from backend.api import fmp_api
 import streamlit_authenticator as stauth
 
 from backend.logic.fundamentals import check_fundamentals
-from backend.logic.peer_comparison import get_peers, get_peer_metrics
+
 from backend.logic.growth_consensus import get_growth_consensus
 
 logging.basicConfig(
@@ -141,6 +141,8 @@ def _compute_combined_score(
 def _init_session_state():
     if "analysis_count" not in st.session_state:
         st.session_state["analysis_count"] = 0
+    if "ov_result" not in st.session_state:
+        st.session_state["ov_result"] = None
 
 
 def _check_session_limit():
@@ -163,6 +165,158 @@ def _validate_ticker(ticker: str) -> str:
             f"Invalid ticker '{ticker}'. Expected 1–5 uppercase letters (e.g. AAPL)."
         )
     return cleaned
+
+
+# ─── Index Manager ────────────────────────────────────────────────────────────
+
+_INDEX_TYPES = {
+    "10-K": "SEC Filings (10-K)",
+    "earnings_call": "Earnings Transcripts",
+    "news_article": "Yahoo Finance News",
+    "company_info": "Yahoo Company Info",
+}
+
+# Maps ChromaDB document_type → the substring that identifies matching CacheManager keys.
+# news_article has no CacheManager entry, so it maps to None.
+_DTYPE_CACHE_FRAGMENT = {
+    "10-K":          "_10K_",
+    "earnings_call": "_earnings_",
+    "company_info":  "_yahoo_info",
+    "news_article":  None,
+}
+
+
+def _invalidate_ticker_cache(tickers: set, dtype: str, cache) -> None:
+    """
+    Remove CacheManager entries for tickers whose ChromaDB chunks were just deleted.
+
+    Only touches keys that belong to the affected tickers and correspond to the
+    deleted document_type — unrelated tickers and unrelated cache namespaces are
+    left untouched.
+    """
+    fragment = _DTYPE_CACHE_FRAGMENT.get(dtype)
+    if fragment is None:
+        log.debug(
+            "[index_manager][cache_skip] document_type=%s has no CacheManager entries",
+            dtype,
+        )
+        return
+
+    for ticker in tickers:
+        prefix = f"{ticker}{fragment}"
+        matching = [k for k in list(cache.metadata.keys()) if k.startswith(prefix)]
+        if not matching:
+            log.debug(
+                "[index_manager][cache_no_entry] ticker=%s document_type=%s",
+                ticker,
+                dtype,
+            )
+            continue
+        for k in matching:
+            dt = cache.metadata[k].get("data_type", "misc")
+            cache.clear(key=k, data_type=dt)
+            log.info(
+                "[index_manager][cache_invalidated] ticker=%s reason=chunks_deleted "
+                "document_type=%s key=%s",
+                ticker,
+                dtype,
+                k,
+            )
+
+
+def _render_index_manager():
+    """Sidebar expander to inspect and selectively delete ChromaDB index entries."""
+    with st.sidebar.expander("🗄️ Manage Index", expanded=False):
+        # ── Count docs per type ───────────────────────────────────────────────
+        try:
+            from backend.valuekit_ai.rag.vector_store import get_vector_store
+            vs = get_vector_store()
+            raw_col = vs.vectorstore._collection
+            counts = {}
+            for dtype in _INDEX_TYPES:
+                result = raw_col.get(where={"document_type": dtype}, include=[])
+                counts[dtype] = len(result["ids"])
+            total = sum(counts.values())
+        except Exception as e:
+            st.error(f"Could not read index: {e}")
+            return
+
+        col_cnt, col_btn = st.columns([3, 1])
+        col_cnt.caption(f"Total chunks in index: **{total}**")
+        if col_btn.button("↻", key="idx_refresh", help="Refresh counts"):
+            st.rerun()
+
+        for dtype, label in _INDEX_TYPES.items():
+            st.caption(f"- {label}: {counts[dtype]}")
+
+        st.markdown("---")
+        st.markdown("**Select types to delete:**")
+
+        selected_types = []
+        for dtype, label in _INDEX_TYPES.items():
+            if counts[dtype] > 0:
+                checked = st.checkbox(
+                    f"{label} ({counts[dtype]})",
+                    value=False,
+                    key=f"idx_del_{dtype}",
+                )
+                if checked:
+                    selected_types.append(dtype)
+            else:
+                st.caption(f"{label}: empty")
+
+        if not selected_types:
+            return
+
+        # ── Step 1: first button ──────────────────────────────────────────────
+        if st.button("Delete Selected", key="idx_del_step1", type="secondary"):
+            st.session_state["idx_pending_delete"] = selected_types
+
+        pending = st.session_state.get("idx_pending_delete", [])
+        if not pending:
+            return
+
+        # ── Step 2: confirm ───────────────────────────────────────────────────
+        labels = [_INDEX_TYPES[t] for t in pending]
+        st.warning(
+            f"Delete **{sum(counts[t] for t in pending)} chunks** "
+            f"from: {', '.join(labels)}?\n\nThis cannot be undone."
+        )
+        if st.button("Confirm Delete", key="idx_del_step2", type="primary"):
+            try:
+                from backend.cache import get_cache_manager
+                cache = get_cache_manager()
+
+                for dtype in pending:
+                    n = counts[dtype]
+
+                    # Collect affected tickers before deletion so we can target
+                    # only their cache entries — do not touch unrelated tickers.
+                    meta_result = raw_col.get(
+                        where={"document_type": dtype}, include=["metadatas"]
+                    )
+                    affected_tickers = {
+                        m.get("ticker")
+                        for m in meta_result["metadatas"]
+                        if m.get("ticker")
+                    }
+
+                    raw_col.delete(where={"document_type": dtype})
+                    log.info(
+                        "[index_manager][delete] document_type=%s count=%d tickers=%s",
+                        dtype,
+                        n,
+                        sorted(affected_tickers),
+                    )
+
+                    _invalidate_ticker_cache(affected_tickers, dtype, cache)
+
+                st.success("Deleted. Refresh the page to see updated counts.")
+            except Exception as e:
+                log.error("[index_manager][delete_error] error=%s", e)
+                st.error(f"Deletion failed: {e}")
+            finally:
+                st.session_state.pop("idx_pending_delete", None)
 
 
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -192,6 +346,10 @@ def _render_sidebar() -> str:
         f"Analyses this session: "
         f"{st.session_state.get('analysis_count', 0)}/{MAX_ANALYSES_PER_SESSION}"
     )
+
+    st.sidebar.markdown("---")
+    _render_index_manager()
+
     return selected
 
 
@@ -917,7 +1075,7 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
     Called at top level from _page_moat() and inside an expander from _page_overview().
 
     Args:
-        ticker:    Stock ticker — passed to check_fundamentals() and get_peer_metrics()
+        ticker:    Stock ticker — passed to check_fundamentals()
         year:      Analysis year
         ai:        ai_decision dict (InvestmentDecision.to_dict())
         bm_result: Optional result from analyze_business_model()
@@ -1019,34 +1177,6 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
         log.warning("[app][fundamentals_error] ticker=%s error=%s", ticker, _fe)
         st.info("Could not load quantitative fundamentals.")
 
-    # ── Peer Comparison ───────────────────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("🏢 Peer Comparison")
-    with st.spinner("Loading peer metrics..."):
-        try:
-            peer_df    = get_peer_metrics(ticker, year)
-            display_df = peer_df.drop(columns=["_is_subject"])
-
-            def _highlight_subject(row):
-                is_subj = peer_df.loc[row.name, "_is_subject"]
-                return (
-                    ["font-weight: bold; background-color: #e8f5e9"] * len(row)
-                    if is_subj else [""] * len(row)
-                )
-
-            st.dataframe(
-                display_df.style.apply(_highlight_subject, axis=1),
-                use_container_width=True,
-                hide_index=True,
-            )
-            st.caption(
-                "Bold row = subject ticker. "
-                "MOS% = upside to fair value (positive = undervalued). "
-                "FMP data only · no RAG."
-            )
-        except Exception as _pe:
-            log.warning("[app][peers_error] ticker=%s error=%s", ticker, _pe)
-            st.info("Peer comparison table could not be loaded.")
 
 
 def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
@@ -1148,7 +1278,10 @@ def _page_moat():
         load_earnings = st.checkbox(
             "Load Earnings Transcripts", value=False, key="moat_earn"
         )
-        load_news = st.checkbox("Load News Articles", value=False, key="moat_news")
+        load_news = st.checkbox("Load Yahoo Finance News", value=False, key="moat_news")
+        load_yahoo_info = st.checkbox(
+            "Load Yahoo Company Info", value=False, key="moat_yahoo_info"
+        )
 
     st.markdown("**Moat Types to Assess**")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -1181,12 +1314,13 @@ def _page_moat():
         )
 
         log.info(
-            "[app][moat_start] ticker=%s year=%d load_sec=%s load_earnings=%s load_news=%s pipeline_version=%s",
+            "[app][moat_start] ticker=%s year=%d load_sec=%s load_earnings=%s load_news=%s load_yahoo_info=%s pipeline_version=%s",
             ticker,
             year,
             load_sec,
             load_earnings,
             load_news,
+            load_yahoo_info,
             PIPELINE_VERSION,
         )
 
@@ -1194,11 +1328,30 @@ def _page_moat():
             f"Running AI Moat Analysis for {ticker} — this may take a moment..."
         ):
             try:
+                from backend.valuekit_ai.data_pipeline.load_sec_data import (
+                    load_company_data as _load_sec,
+                    load_news_data as _load_news,
+                    load_yahoo_info_data as _load_yahoo_info,
+                )
+                if load_sec:
+                    _load_sec(ticker)
+                if load_news:
+                    _load_news(ticker)
+                if load_yahoo_info:
+                    info_result = _load_yahoo_info(ticker)
+                    if info_result.get("status") != "success":
+                        st.warning(f"Yahoo Company Info could not be loaded: {info_result.get('message', 'unknown error')}")
+                    else:
+                        log.info(
+                            "[app][yahoo_info_loaded] ticker=%s chunks=%d",
+                            ticker, info_result.get("chunks_created", 0),
+                        )
+
                 analyzer = ValueKitAnalyzer()
 
-                # Business Model (only when SEC/earnings/news data is loaded)
+                # Business Model (only when SEC/earnings/news/info data is loaded)
                 bm_result = None
-                if load_sec or load_earnings or load_news:
+                if load_sec or load_earnings or load_news or load_yahoo_info:
                     bm_result = (
                         analyzer.ai_analyzer.moat_analyzer.analyze_business_model(ticker)
                     )
@@ -1210,9 +1363,10 @@ def _page_moat():
                     auto_estimate_growth=False,
                     discount_rate=0.15,
                     margin_of_safety=0.50,
-                    load_sec_data=load_sec,
+                    load_sec_data=False,        # already loaded above
                     load_earnings_data=load_earnings,
-                    load_news_data=load_news,
+                    load_news_data=False,       # already loaded above
+                    load_yahoo_info_data=False, # already loaded above
                     config=config,
                 )
 
@@ -1275,12 +1429,17 @@ def _page_overview():
             st.slider("Margin of Safety (%)", 10, 60, 50, step=5, key="ov_mos") / 100
         )
 
-    col3, col4 = st.columns(2)
+    col3, col4, col5, col6 = st.columns(4)
     load_sec = col3.checkbox("Load SEC Filings", value=False, key="ov_sec")
     load_earnings = col4.checkbox(
         "Load Earnings Transcripts", value=False, key="ov_earn"
     )
-
+    load_news = col5.checkbox(
+        "Load Yahoo Finance News", value=False, key="ov_news"
+    )
+    load_yahoo_info = col6.checkbox(
+        "Load Yahoo Company Info", value=False, key="ov_yahoo_info"
+    )
     if st.button("Run Full Analysis", type="primary", key="ov_run"):
         _check_session_limit()
         try:
@@ -1307,6 +1466,26 @@ def _page_overview():
 
         with st.spinner(f"Running full analysis for {ticker}..."):
             try:
+                # Load RAG sources directly before analysis (same pattern as moat page)
+                from backend.valuekit_ai.data_pipeline.load_sec_data import (
+                    load_company_data as _load_sec,
+                    load_news_data as _load_news,
+                    load_yahoo_info_data as _load_yahoo_info,
+                )
+                if load_sec:
+                    _load_sec(ticker)
+                if load_news:
+                    _load_news(ticker)
+                if load_yahoo_info:
+                    info_result = _load_yahoo_info(ticker)
+                    if info_result.get("status") != "success":
+                        st.warning(f"Yahoo Company Info could not be loaded: {info_result.get('message', 'unknown error')}")
+                    else:
+                        log.info(
+                            "[app][yahoo_info_loaded] ticker=%s chunks=%d",
+                            ticker, info_result.get("chunks_created", 0),
+                        )
+
                 analyzer = ValueKitAnalyzer()
                 result = analyzer.analyze_stock_complete(
                     ticker=ticker,
@@ -1314,104 +1493,21 @@ def _page_overview():
                     auto_estimate_growth=True,
                     discount_rate=discount_rate,
                     margin_of_safety=mos_pct,
-                    load_sec_data=load_sec,
+                    load_sec_data=False,       # already loaded above
                     load_earnings_data=load_earnings,
+                    load_news_data=False,      # already loaded above
+                    load_yahoo_info_data=False, # already loaded above
                     config=config,
                 )
 
                 st.session_state["analysis_count"] += 1
-
-                # Growth Rate transparency (consensus source)
-                gc = result.get("growth_consensus")
-                if gc:
-                    _METHOD_LABELS_OV = {
-                        "consensus":     "CAGR (60%) + Analyst (40%)",
-                        "own_cagr_only": "CAGR only",
-                        "analyst_only":  "Analyst only",
-                        "fallback":      "Fallback 10%",
-                    }
-                    gc_label = _METHOD_LABELS_OV.get(gc["method"], gc["method"])
-                    own = gc["sources"].get("own_cagr")
-                    ana = gc["sources"].get("analyst_estimate")
-                    cap_note = " (capped at 25%)" if gc["capped"] else ""
-                    parts = [f"Growth rate: **{gc['rate']*100:.1f}%{cap_note}** — {gc_label}"]
-                    if own is not None:
-                        parts.append(f"Own CAGR: {own*100:.1f}%")
-                    if ana is not None:
-                        parts.append(f"Analyst: {ana*100:.1f}%")
-                    st.caption("  |  ".join(parts))
-
-                # ── 3-Score Model ─────────────────────────────────────────
-                ai = result.get("ai_decision") or {}
-                overall = ai.get("overall_score")
-                if overall is not None:
-                    st.subheader("🎯 Combined Investment Score")
-
-                    # Row 1: the three component scores + combined
-                    cs1, cs2, cs3, cs4 = st.columns(4)
-                    cs1.metric(
-                        "Quality Score (40%)",
-                        f"{ai.get('quantitative_score', 0)} / 100",
-                        help="ROIC · FCF Yield · Net Margin · CAGR",
-                    )
-                    cs2.metric(
-                        "Valuation Score (20%)",
-                        f"{ai.get('valuation_score', 0)} / 100",
-                        help="MOS · TenCap · PBT — price vs fair value",
-                    )
-                    cs3.metric(
-                        "Moat Score (40%)",
-                        f"{ai.get('qualitative_score', 0)} / 100",
-                        help="RAG qualitative moat analysis",
-                    )
-                    cs4.metric(
-                        "Combined Score",
-                        f"{overall} / 100",
-                        help="Quality×0.40 + Valuation×0.20 + Moat×0.40 − Red Flag Penalty",
-                    )
-
-                    # Row 2: moat strength + red flag count
-                    ms1, ms2, ms3, ms4 = st.columns(4)
-                    ms1.metric(
-                        "Moat Strength",
-                        ai.get("moat_strength", "N/A"),
-                        help="Wide ≥ 65% moat score · Narrow ≥ 40% · None below 40%",
-                    )
-                    red_flag_count = len(ai.get("red_flags") or [])
-                    ms2.metric(
-                        "Red Flags",
-                        red_flag_count,
-                        help="Each flag reduces Combined Score by 5 pts (max −25)",
-                    )
-                    ms3.metric("Confidence", ai.get("confidence", "N/A"))
-
-                    # Decision banner
-                    decision = ai.get("decision", "N/A")
-                    _DECISION_RULES = {
-                        "STRONG BUY": "Score ≥ 80 and 0 red flags",
-                        "BUY":        "Score ≥ 70 and ≤ 1 red flag",
-                        "HOLD":       "Score ≥ 50",
-                        "PASS":       "Score < 50",
-                    }
-                    rule = _DECISION_RULES.get(decision, "—")
-                    rec_fn = {
-                        "STRONG BUY": st.success,
-                        "BUY":        st.success,
-                        "HOLD":       st.warning,
-                        "PASS":       st.error,
-                    }.get(decision, st.info)
-                    rec_fn(f"**{decision}** — {rule}")
-                    st.caption(
-                        f"Decision rule applied: Combined={overall} | "
-                        f"Red Flags={red_flag_count} → {decision}"
-                    )
-
-                    st.divider()
-
-                with st.expander("🤖 AI Moat Analysis", expanded=False):
-                    _render_moat_results(ticker, year, ai, bm_result=None)
-
-                _render_quant_pipeline(result, mos_pct)
+                # Persist result so it survives sidebar-triggered reruns
+                st.session_state["ov_result"] = {
+                    "result": result,
+                    "ticker": ticker,
+                    "year": year,
+                    "mos_pct": mos_pct,
+                }
 
                 log.info(
                     "[app][overview_complete] ticker=%s recommendation=%s",
@@ -1422,6 +1518,106 @@ def _page_overview():
             except Exception as e:
                 log.error("[app][overview_error] ticker=%s error=%s", ticker_input, e)
                 st.error("An error occurred during analysis. Please try again.")
+
+    # ── Render last result (persists across reruns, e.g. from sidebar refresh) ──
+    _ov = st.session_state.get("ov_result")
+    if _ov:
+        result  = _ov["result"]
+        ticker  = _ov["ticker"]
+        year    = _ov["year"]
+        mos_pct = _ov["mos_pct"]
+
+        # Growth Rate transparency (consensus source)
+        gc = result.get("growth_consensus")
+        if gc:
+            _METHOD_LABELS_OV = {
+                "consensus":     "CAGR (60%) + Analyst (40%)",
+                "own_cagr_only": "CAGR only",
+                "analyst_only":  "Analyst only",
+                "fallback":      "Fallback 10%",
+            }
+            gc_label = _METHOD_LABELS_OV.get(gc["method"], gc["method"])
+            own = gc["sources"].get("own_cagr")
+            ana = gc["sources"].get("analyst_estimate")
+            cap_note = " (capped at 25%)" if gc["capped"] else ""
+            parts = [f"Growth rate: **{gc['rate']*100:.1f}%{cap_note}** — {gc_label}"]
+            if own is not None:
+                parts.append(f"Own CAGR: {own*100:.1f}%")
+            if ana is not None:
+                parts.append(f"Analyst: {ana*100:.1f}%")
+            st.caption("  |  ".join(parts))
+
+        # ── 3-Score Model ─────────────────────────────────────────────────
+        ai = result.get("ai_decision") or {}
+        overall = ai.get("overall_score")
+        if overall is not None:
+            st.subheader("🎯 Combined Investment Score")
+
+            # Row 1: the three component scores + combined
+            cs1, cs2, cs3, cs4 = st.columns(4)
+            cs1.metric(
+                "Quality Score (40%)",
+                f"{ai.get('quantitative_score', 0)} / 100",
+                help="ROIC · FCF Yield · Net Margin · CAGR",
+            )
+            cs2.metric(
+                "Valuation Score (20%)",
+                f"{ai.get('valuation_score', 0)} / 100",
+                help="MOS · TenCap · PBT — price vs fair value",
+            )
+            cs3.metric(
+                "Moat Score (40%)",
+                f"{ai.get('qualitative_score', 0)} / 100",
+                help="RAG qualitative moat analysis",
+            )
+            cs4.metric(
+                "Combined Score",
+                f"{overall} / 100",
+                help="Quality×0.40 + Valuation×0.20 + Moat×0.40 − Red Flag Penalty",
+            )
+
+            # Row 2: moat strength + red flag count
+            ms1, ms2, ms3, ms4 = st.columns(4)
+            ms1.metric(
+                "Moat Strength",
+                ai.get("moat_strength", "N/A"),
+                help="Wide ≥ 65% moat score · Narrow ≥ 40% · None below 40%",
+            )
+            red_flag_count = len(ai.get("red_flags") or [])
+            ms2.metric(
+                "Red Flags",
+                red_flag_count,
+                help="Each flag reduces Combined Score by 5 pts (max −25)",
+            )
+            ms3.metric("Confidence", ai.get("confidence", "N/A"))
+
+            # Decision banner
+            decision = ai.get("decision", "N/A")
+            _DECISION_RULES = {
+                "STRONG BUY": "Score ≥ 80 and 0 red flags",
+                "BUY":        "Score ≥ 70 and ≤ 1 red flag",
+                "HOLD":       "Score ≥ 50",
+                "PASS":       "Score < 50",
+            }
+            rule = _DECISION_RULES.get(decision, "—")
+            rec_fn = {
+                "STRONG BUY": st.success,
+                "BUY":        st.success,
+                "HOLD":       st.warning,
+                "PASS":       st.error,
+            }.get(decision, st.info)
+            rec_fn(f"**{decision}** — {rule}")
+            st.caption(
+                f"Decision rule applied: Combined={overall} | "
+                f"Red Flags={red_flag_count} → {decision}"
+            )
+
+            st.divider()
+
+        with st.expander("🤖 AI Moat Analysis", expanded=False):
+            _render_moat_results(ticker, year, ai, bm_result=None)
+
+        _render_quant_pipeline(result, mos_pct)
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────

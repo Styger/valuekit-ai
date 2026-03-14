@@ -4,6 +4,7 @@ Follows same pattern as load_sec_data.py
 """
 
 from backend.valuekit_ai.data_pipeline.earnings_fetcher import fetch_and_prepare_for_rag
+from backend.valuekit_ai.data_pipeline.load_sec_data import _delete_ticker_chunks
 from backend.valuekit_ai.rag.rag_service import get_rag_service
 from langchain_core.documents import Document
 
@@ -34,6 +35,9 @@ def load_earnings_data(
         Status dict
     """
     log.info(f"📞 Loading earnings data for {ticker}...")
+
+    # Delete existing chunks for this ticker/type before reloading
+    _delete_ticker_chunks(ticker, "earnings_call")
 
     # Step 1: Fetch earnings transcripts
     log.info(f"  → Fetching {quarters} most recent earnings calls...")

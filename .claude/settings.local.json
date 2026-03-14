@@ -7,7 +7,9 @@
       "Bash(pip index:*)",
       "Bash(where streamlit:*)",
       "Bash(/c/Python312/python.exe:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(find \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/core\" -name \"*.pyc\" -delete && echo \"done\")",
+      "Bash(find \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend\" -name \"*.pyc\" -delete && echo \"cleared\")"
     ]
   }
 }
