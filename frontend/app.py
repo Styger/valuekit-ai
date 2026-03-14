@@ -27,7 +27,7 @@ from backend.valuekit_ai.config.analysis_config import AnalysisConfig
 from backend.valuekit_ai.core.valuekit_integration import ValueKitAnalyzer
 from backend.logic.mos import calculate_mos_value_from_ticker
 from backend.logic import profitability
-from backend.logic.tencap import _get_ten_cap_result, calculate_ten_cap_with_comparison
+from backend.logic.tencap import _get_ten_cap_result
 from backend.logic.pbt import calculate_pbt_from_ticker, calculate_pbt_with_comparison
 from backend.logic.cagr import (
     _mos_growth_estimate_auto,
@@ -427,7 +427,6 @@ def _render_sidebar() -> str:
             "🛡️ Margin of Safety (MOS)",
             "💰 Profitability Metrics",
             "⏱️ Payback Time (PBT)",
-            "🔟 TenCap Valuation",
             "🤖 AI Moat Analysis",
         ],
         key="nav_mode",
@@ -1143,189 +1142,6 @@ def _page_pbt():
                 st.error("An error occurred. Please try again.")
 
 
-def _page_tencap():
-    st.header("🔟 TenCap Valuation")
-    st.caption(
-        "Owner Earnings ÷ 10% cap rate. "
-        "Fair Value = 2× Buy Price. Buy Price already includes a 50% margin of safety."
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        ticker_input = _ticker_input("tencap_ticker")
-    with col2:
-        multi_year = st.checkbox("Multiple Years?", value=False, key="tencap_multi")
-
-    if multi_year:
-        col1, col2 = st.columns(2)
-        with col1:
-            start_year = st.number_input(
-                "Start Year",
-                min_value=2000,
-                max_value=2030,
-                value=2020,
-                step=1,
-                key="tencap_start",
-            )
-        with col2:
-            end_year = st.number_input(
-                "End Year",
-                min_value=2000,
-                max_value=2030,
-                value=2024,
-                step=1,
-                key="tencap_end",
-            )
-        years = list(range(start_year, end_year + 1))
-    else:
-        single_year = st.number_input(
-            "Year", min_value=2000, max_value=2030, value=2024, step=1, key="tencap_single"
-        )
-        years = [single_year]
-
-    show_details = st.checkbox(
-        "Show calculation details", value=False, key="tencap_details"
-    )
-
-    if st.button("Run TenCap Analysis", type="primary", key="tencap_run"):
-        if multi_year and start_year >= end_year:
-            st.error("Start year must be before end year.")
-            return
-        _check_session_limit()
-        try:
-            ticker = _validate_ticker(ticker_input)
-        except ValueError as e:
-            st.error(str(e))
-            return
-
-        log.info(
-            "[app][tencap_start] ticker=%s years=%s pipeline_version=%s",
-            ticker, years, PIPELINE_VERSION,
-        )
-
-        with st.spinner(f"Calculating TenCap for {ticker}..."):
-            try:
-                results = []
-                for year in years:
-                    try:
-                        data = calculate_ten_cap_with_comparison(ticker, year)
-                        if data:
-                            results.append(data)
-                        else:
-                            log.warning("[app][tencap_year_skip] ticker=%s year=%d no_data", ticker, year)
-                    except Exception as ye:
-                        log.warning("[app][tencap_year_skip] year=%d error=%s", year, ye)
-
-                if not results:
-                    st.error(f"No TenCap data found for {ticker}.")
-                    return
-
-                st.session_state["analysis_count"] += 1
-                latest = results[-1]
-
-                log.info(
-                    "[app][tencap_complete] ticker=%s fair_value=%s buy_price=%s pipeline_version=%s",
-                    ticker,
-                    latest.get("ten_cap_fair_value"),
-                    latest.get("ten_cap_buy_price"),
-                    PIPELINE_VERSION,
-                )
-
-                st.success(f"TenCap Analysis completed for {ticker}")
-
-                # ── Key metrics ───────────────────────────────────────────────
-                c1, c2, c3 = st.columns(3)
-                fair_value   = latest.get("ten_cap_fair_value")
-                buy_price    = latest.get("ten_cap_buy_price")
-                current_price = latest.get("current_stock_price")
-                c1.metric("Fair Value",    f"${fair_value:,.2f}"    if fair_value    else "N/A")
-                c2.metric("Buy Price",     f"${buy_price:,.2f}"     if buy_price     else "N/A")
-                c3.metric("Current Price", f"${current_price:,.2f}" if current_price else "N/A")
-
-                # ── Valuation verdict ─────────────────────────────────────────
-                comparison = latest.get("price_vs_fair_value_tencap", "N/A")
-                if "Undervalued" in str(comparison):
-                    st.success(f"📈 {comparison}")
-                elif "Overvalued" in str(comparison):
-                    st.warning(f"📉 {comparison}")
-                else:
-                    st.info(f"⚖️ {comparison}")
-
-                recommendation = latest.get("investment_recommendation", "N/A")
-                _show_recommendation(recommendation)
-
-                if latest.get("year_fallback"):
-                    st.info(
-                        f"ℹ️ Data Fallback: requested {latest.get('requested_year')} "
-                        f"→ used {latest.get('year')}"
-                    )
-
-                # ── Calculation detail breakdown ──────────────────────────────
-                if show_details:
-                    with st.expander("📐 Calculation Details", expanded=True):
-                        d1, d2 = st.columns(2)
-                        d1.metric(
-                            "Profit Before Tax",
-                            f"${latest.get('profit_before_tax', 0):,.2f}M",
-                        )
-                        d1.metric(
-                            "Depreciation & Amortisation",
-                            f"${latest.get('depreciation', 0):,.2f}M",
-                        )
-                        d1.metric(
-                            "Δ Working Capital",
-                            f"${latest.get('working_capital_change', 0):,.2f}M",
-                        )
-                        d1.metric(
-                            "50% Maintenance CapEx",
-                            f"${latest.get('maintenance_capex', 0) * 0.5:,.2f}M",
-                        )
-                        d2.metric(
-                            "Owner Earnings",
-                            f"${latest.get('owner_earnings', 0):,.2f}M",
-                        )
-                        d2.metric(
-                            "Shares Outstanding",
-                            f"{latest.get('shares_outstanding', 0):,.2f}M",
-                        )
-                        d2.metric(
-                            "Earnings per Share (Owner)",
-                            f"${latest.get('earnings_per_share', 0):,.2f}",
-                        )
-                        st.caption(
-                            "Formula: Owner Earnings = PBT + D&A + ΔWC − 50% CapEx  |  "
-                            "Buy Price = EPS ÷ 10%  |  Fair Value = Buy Price × 2"
-                        )
-
-                # ── Multi-year summary table ──────────────────────────────────
-                if len(results) > 1:
-                    st.markdown("**Year-by-Year Summary**")
-                    table_rows = []
-                    for r in results:
-                        fv = r.get("ten_cap_fair_value")
-                        bp = r.get("ten_cap_buy_price")
-                        row = {
-                            "Year":       r.get("year", "N/A"),
-                            "Fair Value": f"${fv:,.2f}" if fv else "N/A",
-                            "Buy Price":  f"${bp:,.2f}" if bp else "N/A",
-                            "Owner EPS":  f"${r.get('earnings_per_share', 0):,.2f}",
-                        }
-                        table_rows.append(row)
-                    # Append current price & comparison to the latest year row
-                    if current_price and fair_value:
-                        table_rows[-1]["Current Price"] = f"${current_price:,.2f}"
-                        table_rows[-1]["vs Fair Value"] = comparison
-                    st.dataframe(
-                        pd.DataFrame(table_rows),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-            except Exception as e:
-                log.error("[app][tencap_error] ticker=%s error=%s", ticker_input, e)
-                st.error("An error occurred. Please try again.")
-
-
 # ─── Shared rendering helpers ─────────────────────────────────────────────────
 
 
@@ -1962,7 +1778,6 @@ def main():
         "🛡️ Margin of Safety (MOS)": _page_mos,
         "💰 Profitability Metrics": _page_profitability,
         "⏱️ Payback Time (PBT)": _page_pbt,
-        "🔟 TenCap Valuation": _page_tencap,
         "🤖 AI Moat Analysis": _page_moat,
     }
     PAGE_FN[selected]()
