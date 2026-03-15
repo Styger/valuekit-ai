@@ -49,19 +49,19 @@ def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
         ticker:    Stock ticker
         year:      Requested year — fed to get_latest_common_year to find
                    actual_year for balance-sheet point-in-time checks
-                   (Debt/Equity, Current Ratio).
+                   (Debt/Equity, Debt/EBITDA, ROIC).
         base_year: Explicit anchor for 3-year trend windows.
                    Trend loops use base_year-2 → base_year-1 → base_year.
 
     Checks:
-      1. Debt/Equity        — Flag if > 2.0, Warning if > 1.0  (uses actual_year)
-      2. FCF Trend (3Y)     — OK if positive & growing, Warning if flat, Flag if negative  (uses base_year)
-      3. Gross Margin Trend — OK if stable/improving, Warning if -5pp, Flag if -10pp  (uses base_year)
-      4. Net Margin Trend   — OK if stable/improving, Warning if -3pp, Flag if -7pp  (uses base_year)
-      5. Current Ratio      — Flag if < 1.0, Warning if < 1.5  (uses actual_year)
+      1. Debt/EBITDA        — Flag if > 5.0, Warning if > 3.0            (actual_year)
+      2. FCF Trend (3Y)     — OK if positive & growing, else Warning/Flag (base_year)
+      3. Gross Margin Trend — OK if stable/improving, Warning -5pp, Flag -10pp (base_year)
+      4. Net Margin Trend   — OK if stable/improving, Warning -3pp, Flag -7pp  (base_year)
+      5. ROIC               — Flag if < 10%, Warning if < 15%, OK if >= 15%    (actual_year)
 
     Returns:
-        List of dicts with keys: metric, value, status, note
+        List of dicts with keys: metric, value, status, note, raw
     """
     results = []
 
@@ -85,32 +85,51 @@ def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
     is_ = get_year(income, actual_year)
     cf = get_year(cashflow, actual_year)
 
-    # ── 1. Debt / Equity ─────────────────────────────────────────────────────
     total_debt = bs.get("totalDebt") or 0
     equity = bs.get("totalStockholdersEquity") or bs.get("totalEquity") or 0
-    de_ratio = round(total_debt / equity, 2) if equity > 0 else None
+
+    # ── 1. Debt / EBITDA ─────────────────────────────────────────────────────
+    ebitda = is_.get("ebitda")
+    if not ebitda:
+        op_income = is_.get("operatingIncome") or 0
+        da = cf.get("depreciationAndAmortization") or 0
+        ebitda = op_income + da if (op_income or da) else None
+        ebitda_source = "operatingIncome + D&A"
+    else:
+        ebitda_source = "income statement"
+
+    if ebitda and ebitda > 0:
+        debt_ebitda = round(total_debt / ebitda, 2) if total_debt is not None else None
+    else:
+        debt_ebitda = None
+
+    log.debug(
+        "[fundamentals][debt_ebitda] ticker=%s actual_year=%d "
+        "total_debt=%s ebitda=%s source=%s ratio=%s",
+        ticker, actual_year, total_debt, ebitda, ebitda_source, debt_ebitda,
+    )
 
     results.append(
         {
-            "metric": "Debt / Equity",
-            "value": f"{de_ratio:.2f}×" if de_ratio is not None else "N/A",
-            "raw": de_ratio,
-            "status": _status(de_ratio, 1.0, 2.0, lower_is_better=True)
-            if de_ratio is not None
+            "metric": "Debt / EBITDA",
+            "value": f"{debt_ebitda:.2f}×" if debt_ebitda is not None else "N/A",
+            "raw": debt_ebitda,
+            "status": _status(debt_ebitda, 3.0, 5.0, lower_is_better=True)
+            if debt_ebitda is not None
             else "N/A",
             "note": (
-                "High leverage — potential financial risk"
-                if de_ratio is not None and de_ratio > 2.0
-                else "Moderate leverage"
-                if de_ratio is not None and de_ratio > 1.0
-                else "Conservative balance sheet"
-                if de_ratio is not None
+                "High debt relative to earnings — elevated repayment risk"
+                if debt_ebitda is not None and debt_ebitda > 5.0
+                else "Moderate leverage relative to earnings"
+                if debt_ebitda is not None and debt_ebitda > 3.0
+                else "Manageable debt load relative to earnings"
+                if debt_ebitda is not None
                 else "Insufficient data"
             ),
         }
     )
 
-    # ── 2. FCF Trend (3 years) ────────────────────────────────────────────────
+    # ── 3. FCF Trend (3 years) — anchored to base_year ───────────────────────
     fcf_years = []
     for y in [base_year - 2, base_year - 1, base_year]:
         row = get_year(cashflow, y)
@@ -155,7 +174,7 @@ def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
             }
         )
 
-    # ── 3. Gross Margin Trend ─────────────────────────────────────────────────
+    # ── 4. Gross Margin Trend — anchored to base_year ────────────────────────
     gm_years = []
     for y in [base_year - 2, base_year - 1, base_year]:
         row = get_year(income, y)
@@ -200,7 +219,7 @@ def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
             }
         )
 
-    # ── 4. Net Margin Trend ───────────────────────────────────────────────────
+    # ── 5. Net Margin Trend — anchored to base_year ──────────────────────────
     nm_years = []
     for y in [base_year - 2, base_year - 1, base_year]:
         row = get_year(income, y)
@@ -245,30 +264,32 @@ def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
             }
         )
 
-    # ── 5. Current Ratio ─────────────────────────────────────────────────────
-    current_assets = bs.get("totalCurrentAssets") or 0
-    current_liabilities = bs.get("totalCurrentLiabilities") or 0
-    current_ratio = (
-        round(current_assets / current_liabilities, 2)
-        if current_liabilities > 0
-        else None
+    # ── 6. ROIC — point-in-time (actual_year) ────────────────────────────────
+    net_income = is_.get("netIncome") or 0
+    invested_capital = (equity or 0) + (total_debt or 0)
+    roic = round(net_income / invested_capital, 4) if invested_capital > 0 else None
+
+    log.debug(
+        "[fundamentals][roic] ticker=%s actual_year=%d "
+        "net_income=%s equity=%s total_debt=%s roic=%s",
+        ticker, actual_year, net_income, equity, total_debt, roic,
     )
 
     results.append(
         {
-            "metric": "Current Ratio",
-            "value": f"{current_ratio:.2f}×" if current_ratio is not None else "N/A",
-            "raw": current_ratio,
-            "status": _status(current_ratio, 1.5, 1.0)
-            if current_ratio is not None
+            "metric": "ROIC",
+            "value": f"{roic * 100:.1f}%" if roic is not None else "N/A",
+            "raw": roic,
+            "status": _status(roic, 0.15, 0.10)
+            if roic is not None
             else "N/A",
             "note": (
-                "Strong liquidity position"
-                if current_ratio is not None and current_ratio >= 1.5
-                else "Adequate liquidity"
-                if current_ratio is not None and current_ratio >= 1.0
-                else "Potential short-term liquidity risk"
-                if current_ratio is not None
+                "Strong capital efficiency"
+                if roic is not None and roic >= 0.15
+                else "Moderate capital efficiency"
+                if roic is not None and roic >= 0.10
+                else "Weak capital returns — below cost-of-capital threshold"
+                if roic is not None
                 else "Insufficient data"
             ),
         }

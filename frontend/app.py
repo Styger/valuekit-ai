@@ -1435,7 +1435,10 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
                 for ev in (md.get("evidence") or []):
                     st.caption(f"› {ev}")
 
-    # ── Quantitative Fundamentals ─────────────────────────────────────────────
+
+
+def _render_fundamentals(ticker: str, year: int):
+    """Render Quantitative Fundamentals section — standalone, outside any expander."""
     st.markdown("---")
     st.subheader("📊 Quantitative Fundamentals")
     st.caption("Financial health check — runs independently of RAG documents.")
@@ -1461,7 +1464,6 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
     except Exception as _fe:
         log.warning("[app][fundamentals_error] ticker=%s error=%s", ticker, _fe)
         st.info("Could not load quantitative fundamentals.")
-
 
 
 def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
@@ -1683,6 +1685,7 @@ def _page_moat():
 
                 st.subheader(f"Moat Results — {ticker} ({year})")
                 _render_moat_results(ticker, year, ai, bm_result=bm_result)
+                _render_fundamentals(ticker, year)
 
                 with st.expander("📊 Full Pipeline Overview", expanded=False):
                     _render_quant_pipeline(quant_result, mos_pct=0.50)
@@ -1919,6 +1922,8 @@ def _page_overview():
 
         with st.expander("🤖 AI Moat Analysis", expanded=False):
             _render_moat_results(ticker, year, ai, bm_result=ov_bm_result)
+
+        _render_fundamentals(ticker, year)
 
         _render_quant_pipeline(result, mos_pct)
 
