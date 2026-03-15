@@ -16,7 +16,6 @@ from backend.valuekit_ai.config.analysis_config import AnalysisConfig
 from backend.valuekit_ai.config.config import PIPELINE_VERSION
 from backend.valuekit_ai.core.investment_analyzer import IntegratedAnalyzer
 from backend.logic.mos import calculate_mos_value_from_ticker
-from backend.logic.cagr import _mos_growth_estimate_auto
 from backend.logic.growth_consensus import get_growth_consensus
 from backend.logic.tencap import _get_ten_cap_result
 from backend.logic.pbt import _get_pbt_result
@@ -34,66 +33,6 @@ class ValueKitAnalyzer:
 
     def __init__(self):
         self.ai_analyzer = IntegratedAnalyzer()
-
-    def estimate_growth_rate(
-        self,
-        ticker: str,
-        period_years: int = 5,
-        end_year: int = 2024,
-        include_book: bool = True,
-        include_eps: bool = True,
-        include_revenue: bool = True,
-        include_cashflow: bool = True,
-    ) -> Dict[str, float]:
-        """
-        Estimate growth rate using CAGR analysis
-
-        Args:
-            ticker: Stock ticker
-            period_years: CAGR calculation period
-            end_year: End year for calculation
-            include_book/eps/revenue/cashflow: Metrics to include
-
-        Returns:
-            Dict with CAGR metrics and average growth rate
-        """
-        start_year = end_year - period_years
-
-        log.info(
-            "[valuekit_integration][estimate_growth] ticker=%s start=%d end=%d "
-            "period=%d pipeline_version=%s",
-            ticker,
-            start_year,
-            end_year,
-            period_years,
-            PIPELINE_VERSION,
-        )
-
-        data, mos_input = fmp_api.get_year_data_by_range(
-            ticker, start_year, years=period_years
-        )
-
-        if not data or not mos_input:
-            raise ValueError(f"No data available for {ticker}")
-
-        growth_metrics = _mos_growth_estimate_auto(
-            data_dict=mos_input,
-            start_year=start_year,
-            end_year=end_year,
-            period_years=period_years,
-            known_start_year=start_year,
-            include_book=include_book,
-            include_eps=include_eps,
-            include_revenue=include_revenue,
-            include_cashflow=include_cashflow,
-        )
-
-        log.debug(
-            "[valuekit_integration][growth_result] ticker=%s metrics=%s",
-            ticker,
-            growth_metrics,
-        )
-        return growth_metrics
 
     def analyze_stock_complete(
         self,

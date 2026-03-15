@@ -57,20 +57,6 @@ class AnalysisConfig:
 
 
 
-# Preset Configurations
-def quick_config() -> AnalysisConfig:
-    """Quick analysis - all features enabled except profitability"""
-    return AnalysisConfig(
-        run_mos=True,
-        run_cagr=True,
-        run_profitability=False,
-        run_moat_analysis=True,
-        auto_estimate_growth=True,
-        load_sec_data=False,
-        load_earnings_data=False,
-    )
-
-
 def quantitative_only() -> AnalysisConfig:
     """Quantitative analysis only - no AI moats"""
     return AnalysisConfig(
@@ -83,27 +69,3 @@ def quantitative_only() -> AnalysisConfig:
     )
 
 
-def qualitative_only() -> AnalysisConfig:
-    """Qualitative analysis only - AI moats without numbers"""
-    return AnalysisConfig(
-        run_mos=False,
-        run_cagr=False,
-        run_profitability=False,
-        run_moat_analysis=True,
-        auto_estimate_growth=False,
-        load_sec_data=True,  # Need SEC data for moats
-    )
-
-
-def deep_analysis() -> AnalysisConfig:
-    """Deep analysis - everything enabled"""
-    return AnalysisConfig(
-        run_mos=True,
-        run_cagr=True,
-        run_profitability=True,
-        run_moat_analysis=True,
-        auto_estimate_growth=True,
-        load_sec_data=True,
-        load_earnings_data=True,
-        earnings_quarters=4,
-    )
