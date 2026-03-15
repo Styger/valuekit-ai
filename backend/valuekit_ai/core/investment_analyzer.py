@@ -55,7 +55,6 @@ class InvestmentDecision:
             "reasoning": self.reasoning,
             "moat_strength": self.moat_analysis.moat_strength,
             "moat_score": self.moat_analysis.overall_score,
-            "red_flags": self.moat_analysis.red_flags,
             "avg_relevance_score": self.moat_analysis.avg_relevance_score,
             "total_sources_used": self.moat_analysis.total_sources_used,
             "moat_details": {
@@ -184,14 +183,14 @@ class IntegratedAnalyzer:
         )
         return result
 
-    def _make_decision(self, combined_score: int, red_flag_count: int):
+    def _make_decision(self, combined_score: int):
         """
-        Single authoritative decision logic — laut Flowchart v3.
+        Single authoritative decision logic.
         Returns: (decision, confidence)
         """
-        if combined_score >= 80 and red_flag_count == 0:
+        if combined_score >= 80:
             return "STRONG BUY", "High"
-        elif combined_score >= 70 and red_flag_count <= 1:
+        elif combined_score >= 70:
             return "BUY", "Medium"
         elif combined_score >= 50:
             return "HOLD", "Medium"
@@ -206,7 +205,7 @@ class IntegratedAnalyzer:
     ) -> InvestmentDecision:
         """
         Combine Quality (40%) + Valuation (20%) + Moat (40%) scores.
-        Combined Score = Q×0.40 + V×0.20 + M×0.40 − Red Flag Penalty
+        Combined Score = Q×0.40 + V×0.20 + M×0.40
         """
         num_moats = len(moat_analysis.moats)
         max_moat = num_moats * 10 if num_moats > 0 else 50
@@ -214,16 +213,13 @@ class IntegratedAnalyzer:
             int((moat_analysis.overall_score / max_moat) * 100) if max_moat > 0 else 0
         )
 
-        combined = int(
+        overall = int(
             quality_score * 0.40
             + valuation_score * 0.20
             + moat_normalized * 0.40
         )
 
-        red_flags = len(moat_analysis.red_flags)
-        overall = max(0, combined - min(25, red_flags * 5))
-
-        decision, confidence = self._make_decision(overall, red_flags)
+        decision, confidence = self._make_decision(overall)
 
         reasoning = self._generate_reasoning(
             moat_analysis.ticker, quality_score, moat_analysis, decision
@@ -231,10 +227,9 @@ class IntegratedAnalyzer:
 
         log.debug(
             "[investment_analyzer][combine_scores] quality=%d valuation=%d "
-            "moat_normalized=%d red_flags=%d combined=%d overall=%d "
-            "decision=%s confidence=%s",
+            "moat_normalized=%d overall=%d decision=%s confidence=%s",
             quality_score, valuation_score, moat_normalized,
-            red_flags, combined, overall, decision, confidence,
+            overall, decision, confidence,
         )
 
         return InvestmentDecision(
@@ -248,6 +243,7 @@ class IntegratedAnalyzer:
             reasoning=reasoning,
             moat_analysis=moat_analysis,
         )
+
 
     def _generate_reasoning(
         self,
@@ -271,11 +267,6 @@ class IntegratedAnalyzer:
             parts.append("Evidence indicates a narrow competitive advantage.")
         else:
             parts.append("Available documents do not indicate a durable economic moat.")
-
-        if moat_analysis.red_flags:
-            parts.append(
-                f"{len(moat_analysis.red_flags)} red flag(s) identified requiring attention."
-            )
 
         return " ".join(parts)
 
@@ -377,7 +368,6 @@ class IntegratedAnalyzer:
                 overall_score=0,
                 moat_strength="None",
                 moats={},
-                red_flags=[],
                 competitive_position="Moat analysis skipped",
                 recommendation="N/A",
             )

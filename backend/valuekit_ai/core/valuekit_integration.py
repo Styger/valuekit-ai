@@ -301,9 +301,5 @@ class ValueKitAnalyzer:
         decision = ai_decision.decision
         score = ai_decision.overall_score
         moat = ai_decision.moat_analysis.moat_strength
-        flags = len(ai_decision.moat_analysis.red_flags)
 
-        return (
-            f"{decision} — Combined Score: {score}/100 | "
-            f"Moat: {moat} | Red Flags: {flags}"
-        )
+        return f"{decision} — Combined Score: {score}/100 | Moat: {moat}"

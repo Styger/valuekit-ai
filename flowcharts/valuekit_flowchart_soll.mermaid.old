@@ -1,6 +1,6 @@
 flowchart TD
     A([Start]) --> B
-    B[/User gibt Ticker, Jahr, Moat-Typen\nBrand · Switch · Network · Cost · Scale\nLoad SEC · Earnings · News · Yahoo ja/nein\nQuant/Qual-Gewichtung\nWachstumsrate manuell oder auto/]
+    B[/User gibt Ticker, Jahr, Moat-Typen\nBrand · Switch · Network · Cost · Scale\nLoad SEC ja/nein · Quant/Qual-Gewichtung\nWachstumsrate manuell oder auto/]
     B --> C{Ticker\nValide?}
     C -- Nein --> D([Abbruch])
     C -- Ja --> SPLIT
@@ -17,29 +17,30 @@ flowchart TD
         Q1 --> Q2["Quality Score\nROIC · FCF Yield · Net Margin · CAGR\n→ Score 0–100"]
         Q2 --> Q3["Wachstumsrate: 3-Quellen-Konsens\nEigener CAGR + FMP Analyst Estimates + Cap 25%\n→ Gewichteter Durchschnitt\n→ Anzeige: woher kommt die Zahl"]
         Q3 --> Q4["Valuation Score\nMOS · TenCap · PBT\nPreis vs. Fair Value je Methode\n→ Score 0–100\n⚠ Untergewichtet: Qualitätsunternehmen\nsind strukturell teuer"]
-        Q4 --> Q5["Quantitative Fundamentals\nDebt/EBITDA · FCF-Trend · Margen-Trend\nROIC"]
+        Q4 --> Q5["Quantitative Fundamentals\nDebt/Equity · FCF-Trend · Margen-Trend\nCurrent Ratio\n→ Red Flag Penalty: −5 pro Flag, max −25"]
     end
 
     subgraph QUAL ["🔍 QUALITATIVE ANALYSE"]
         direction TB
-        L1[Dokumente laden\nSEC 10-K Filings · Earnings Transcripts\nYahoo Finance News · Yahoo Company Info]
+        L1[Dokumente laden\nSEC 10-K Filings · Earnings Transcripts]
         L1 --> L7{"Data Quality Check\nAnzahl Sources · Relevance Score\n≥ Threshold?"}
         L7 -- "Nein" --> L7W["⚠ Warnung anzeigen\nAnalyse basiert auf wenigen Quellen\nErgebnis mit Vorsicht interpretieren"]
         L7 -- "Ja" --> L2
         L7W --> L2
         L2["Business Model Beschreibung\nvia RAG generieren\n→ Kontext für Moat-Analyse"]
-        L2 --> L3["Moat Score — parallel (5 Threads)\nBrand Power · Switching Costs\nNetwork Effects · Cost Advantages\nEfficient Scale\n→ Moat Strength: None / Narrow / Wide\n→ Score 0–100"]
+        L2 --> L3["Moat Score\nFür jeden aktivierten Moat-Typ RAG-Analyse:\nBrand Power · Switching Costs\nNetwork Effects · Cost Advantages\nEfficient Scale\n→ Moat Strength: None / Narrow / Wide\n→ Score 0–100"]
+        L3 --> L4["Qualitative Risks\nWettbewerb · Regulierung · Management\nvia RAG aus Dokumenten\n→ Red Flag Penalty: −5 pro Flag, max −25"]
     end
 
     QUANT --> COMBINE
     QUAL --> COMBINE
 
-    COMBINE["Combined Score =\n(w₁ · Quality) + (w₂ · Valuation) + (w₃ · Moat)\nStandard: 40% · 20% · 40%"]
+    COMBINE["Combined Score =\n(w₁ · Quality) + (w₂ · Valuation) + (w₃ · Moat)\n− Red Flag Penalty\nStandard: 40% · 20% · 40%"]
 
     COMBINE --> K{Combined\nScore?}
 
-    K -- "≥ 80" --> SB[STRONG BUY]
-    K -- "≥ 70" --> BU[BUY]
+    K -- "≥ 80, 0 Flags" --> SB[STRONG BUY]
+    K -- "≥ 70, ≤ 1 Flag" --> BU[BUY]
     K -- "≥ 50"           --> HO[HOLD]
     K -- "< 50"           --> PA[PASS]
 

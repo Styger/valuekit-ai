@@ -32,15 +32,6 @@ class AnalysisConfig:
     run_cost_advantages: bool = True
     run_efficient_scale: bool = True
 
-    # Red Flags
-    run_red_flags: bool = True
-
-    # Individual Red Flag Types
-    run_regulatory_risk: bool = True
-    run_competitive_threats: bool = True
-    run_management_issues: bool = True
-    run_financial_stress: bool = True
-
     # Parameters
     margin_of_safety: float = 0.50  # 50% safety margin
     discount_rate: float = 0.15  # 15% discount rate
@@ -64,18 +55,6 @@ class AnalysisConfig:
             moats.append("efficient_scale")
         return moats
 
-    def get_enabled_red_flags(self) -> List[str]:
-        """Get list of enabled red flag types"""
-        flags = []
-        if self.run_regulatory_risk:
-            flags.append("regulatory_risk")
-        if self.run_competitive_threats:
-            flags.append("competitive_threats")
-        if self.run_management_issues:
-            flags.append("management_issues")
-        if self.run_financial_stress:
-            flags.append("financial_stress")
-        return flags
 
 
 # Preset Configurations
@@ -86,7 +65,6 @@ def quick_config() -> AnalysisConfig:
         run_cagr=True,
         run_profitability=False,
         run_moat_analysis=True,
-        run_red_flags=True,
         auto_estimate_growth=True,
         load_sec_data=False,
         load_earnings_data=False,
@@ -100,7 +78,6 @@ def quantitative_only() -> AnalysisConfig:
         run_cagr=True,
         run_profitability=True,
         run_moat_analysis=False,
-        run_red_flags=False,
         auto_estimate_growth=True,
         load_sec_data=False,
     )
@@ -113,7 +90,6 @@ def qualitative_only() -> AnalysisConfig:
         run_cagr=False,
         run_profitability=False,
         run_moat_analysis=True,
-        run_red_flags=True,
         auto_estimate_growth=False,
         load_sec_data=True,  # Need SEC data for moats
     )
@@ -126,7 +102,6 @@ def deep_analysis() -> AnalysisConfig:
         run_cagr=True,
         run_profitability=True,
         run_moat_analysis=True,
-        run_red_flags=True,
         auto_estimate_growth=True,
         load_sec_data=True,
         load_earnings_data=True,

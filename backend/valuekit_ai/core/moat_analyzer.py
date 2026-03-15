@@ -146,7 +146,6 @@ class MoatAnalysis:
     overall_score: int  # sum of all moat scores
     moat_strength: str  # "None", "Narrow", "Wide"
     moats: Dict[str, MoatScore]
-    red_flags: List[str]
     competitive_position: str
     recommendation: str
     avg_relevance_score: float = 0.0  # mean relevance across all moat RAG calls
@@ -257,18 +256,6 @@ class MoatAnalyzer:
                 "barriers to entry? Look for regulatory moats, natural monopolies, "
                 "or oligopoly dynamics."
             ),
-        },
-    }
-
-    RED_FLAG_CATEGORIES = {
-        "debt": {
-            "query": "What are {ticker}'s debt levels and ability to service debt?",
-        },
-        "competition": {
-            "query": "What serious competitive threats does {ticker} face?",
-        },
-        "regulation": {
-            "query": "What regulatory or legal risks threaten {ticker}'s business?",
         },
     }
 
@@ -531,66 +518,6 @@ class MoatAnalyzer:
                     evidence.append(cleaned)
         return evidence[:5]
 
-    def detect_red_flags(
-        self,
-        ticker: str,
-        enabled_categories: List[str] = None,
-        top_k: Optional[int] = None,
-        temperature: Optional[float] = None,
-    ) -> List[str]:
-        """
-        Detect investment red flags
-
-        Args:
-            ticker: Stock ticker
-            enabled_categories: Categories to check (None = all)
-
-        Returns:
-            List of identified red flag descriptions
-        """
-        if enabled_categories is None:
-            enabled_categories = list(self.RED_FLAG_CATEGORIES.keys())
-
-        red_flags = []
-
-        for category in enabled_categories:
-            if category not in self.RED_FLAG_CATEGORIES:
-                continue
-
-            config = self.RED_FLAG_CATEGORIES[category]
-            query = config["query"].format(ticker=ticker)
-            result = self.rag.analyze_with_rag(
-                query=query,
-                quantitative_data={"ticker": ticker},
-                top_k=top_k,
-                temperature=temperature,
-            )
-
-            if result["status"] == "success":
-                analysis = result["analysis"].lower()
-                risk_keywords = [
-                    "significant risk",
-                    "major concern",
-                    "serious threat",
-                    "material impact",
-                    "substantial risk",
-                    "critical",
-                ]
-                if any(kw in analysis for kw in risk_keywords):
-                    red_flags.append(
-                        f"{category.title()}: {result['analysis'][:200]}..."
-                    )
-                    log.debug(
-                        "[moat_analyzer][red_flag] ticker=%s category=%s",
-                        ticker,
-                        category,
-                    )
-
-        log.info(
-            "[moat_analyzer][red_flags] ticker=%s count=%d", ticker, len(red_flags)
-        )
-        return red_flags
-
     def analyze_moats(
         self,
         ticker: str,
@@ -606,10 +533,8 @@ class MoatAnalyzer:
 
         if config:
             enabled_moats = config.get_enabled_moats()
-            enabled_rf = config.get_enabled_red_flags() if config.run_red_flags else []
         else:
             enabled_moats = list(self.MOAT_TYPES.keys())
-            enabled_rf = list(self.RED_FLAG_CATEGORIES.keys())
 
         moats = {}
         total_score = 0
@@ -662,25 +587,20 @@ class MoatAnalyzer:
             else 0.0
         )
 
-        red_flags = self.detect_red_flags(ticker, enabled_rf, top_k=top_k, temperature=temperature)
-
         max_possible = len(moats) * 10
         score_pct = (total_score / max_possible * 100) if max_possible > 0 else 0
         moat_strength = self._moat_strength_from_score(int(score_pct))
 
-        competitive_position = self._assess_competitive_position(moats, red_flags)
-        recommendation = self._generate_recommendation(
-            total_score, moat_strength, red_flags
-        )
+        competitive_position = self._assess_competitive_position(moats)
+        recommendation = self._generate_recommendation(total_score, moat_strength)
 
         log.info(
             "[moat_analyzer][complete] ticker=%s strength=%s score=%d/%d "
-            "red_flags=%d pipeline_version=%s",
+            "pipeline_version=%s",
             ticker,
             moat_strength,
             total_score,
             max_possible,
-            len(red_flags),
             PIPELINE_VERSION,
         )
 
@@ -689,7 +609,6 @@ class MoatAnalyzer:
             overall_score=total_score,
             moat_strength=moat_strength,
             moats=moats,
-            red_flags=red_flags,
             competitive_position=competitive_position,
             recommendation=recommendation,
             avg_relevance_score=avg_relevance,
@@ -709,33 +628,26 @@ class MoatAnalyzer:
         else:
             return "None"
 
-    def _assess_competitive_position(
-        self, moats: Dict[str, MoatScore], red_flags: List[str]
-    ) -> str:
+    def _assess_competitive_position(self, moats: Dict[str, MoatScore]) -> str:
         strong = [k for k, v in moats.items() if v.score >= 7]
         moderate = [k for k, v in moats.items() if 4 <= v.score < 7]
 
-        if len(strong) >= 2 and len(red_flags) == 0:
+        if len(strong) >= 2:
             return "Strong competitive position with multiple durable moats"
         elif len(strong) >= 1 or len(moderate) >= 2:
             return "Moderate competitive position with some protective advantages"
         else:
             return "Weak competitive position with limited moat evidence"
 
-    def _generate_recommendation(
-        self, overall_score: int, moat_strength: str, red_flags: List[str]
-    ) -> str:
+    def _generate_recommendation(self, overall_score: int, moat_strength: str) -> str:
         """
         Returns a moat quality description only.
         Investment decision (BUY/HOLD/PASS) is made exclusively by
         IntegratedAnalyzer._make_decision() based on combined_score.
         """
-        flag_note = f", {len(red_flags)} risk(s) to monitor" if red_flags else ""
         if moat_strength == "Wide":
-            return (
-                f"Wide economic moat — strong durable competitive advantages{flag_note}"
-            )
+            return "Wide economic moat — strong durable competitive advantages"
         elif moat_strength == "Narrow":
-            return f"Narrow economic moat — moderate competitive advantages{flag_note}"
+            return "Narrow economic moat — moderate competitive advantages"
         else:
-            return f"No identifiable economic moat{flag_note}"
+            return "No identifiable economic moat"

@@ -73,7 +73,7 @@ class RAGConfig:
     LLM_TEMPERATURE = 0.0  # Für präzise quantitative Analysen
 
     # Retrieval Settings
-    TOP_K_RESULTS = 5  # Anzahl relevanter Chunks für Context
+    TOP_K_RESULTS = 8  # Anzahl relevanter Chunks für Context
 
     # Generation Settings
     LLM_MAX_TOKENS = 4096

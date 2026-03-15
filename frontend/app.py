@@ -1410,11 +1410,6 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
 
     st.markdown("---")
     st.markdown(f"**Reasoning:** {ai.get('reasoning', 'N/A')}")
-    if ai.get("red_flags"):
-        st.warning(
-            "**Red Flags Identified:**\n"
-            + "\n".join(f"- {rf}" for rf in ai["red_flags"])
-        )
 
     # ── Per-type moat scores with progress bars ───────────────────────────────
     moat_details = ai.get("moat_details") or {}
@@ -1577,8 +1572,6 @@ def _page_moat():
     network = c3.checkbox("Network Effects", value=True, key="moat_net")
     cost = c4.checkbox("Cost Advantages", value=True, key="moat_cost")
     scale = c5.checkbox("Efficient Scale", value=True, key="moat_scale")
-    run_red_flags = st.checkbox("Run Red Flag Detection", value=True, key="moat_rf")
-
     if st.button("Run Moat Analysis", type="primary", key="moat_run"):
         _check_session_limit()
         try:
@@ -1597,7 +1590,6 @@ def _page_moat():
             run_network_effects=network,
             run_cost_advantages=cost,
             run_efficient_scale=scale,
-            run_red_flags=run_red_flags,
         )
 
         log.info(
@@ -1879,29 +1871,23 @@ def _page_overview():
             cs4.metric(
                 "Combined Score",
                 f"{overall} / 100",
-                help="Quality×0.40 + Valuation×0.20 + Moat×0.40 − Red Flag Penalty",
+                help="Quality×0.40 + Valuation×0.20 + Moat×0.40",
             )
 
-            # Row 2: moat strength + red flag count
-            ms1, ms2, ms3, ms4 = st.columns(4)
+            # Row 2: moat strength + confidence
+            ms1, ms2 = st.columns(2)
             ms1.metric(
                 "Moat Strength",
                 ai.get("moat_strength", "N/A"),
                 help="Wide ≥ 65% moat score · Narrow ≥ 40% · None below 40%",
             )
-            red_flag_count = len(ai.get("red_flags") or [])
-            ms2.metric(
-                "Red Flags",
-                red_flag_count,
-                help="Each flag reduces Combined Score by 5 pts (max −25)",
-            )
-            ms3.metric("Confidence", ai.get("confidence", "N/A"))
+            ms2.metric("Confidence", ai.get("confidence", "N/A"))
 
             # Decision banner
             decision = ai.get("decision", "N/A")
             _DECISION_RULES = {
-                "STRONG BUY": "Score ≥ 80 and 0 red flags",
-                "BUY":        "Score ≥ 70 and ≤ 1 red flag",
+                "STRONG BUY": "Score ≥ 80",
+                "BUY":        "Score ≥ 70",
                 "HOLD":       "Score ≥ 50",
                 "PASS":       "Score < 50",
             }
@@ -1913,10 +1899,7 @@ def _page_overview():
                 "PASS":       st.error,
             }.get(decision, st.info)
             rec_fn(f"**{decision}** — {rule}")
-            st.caption(
-                f"Decision rule applied: Combined={overall} | "
-                f"Red Flags={red_flag_count} → {decision}"
-            )
+            st.caption(f"Decision rule applied: Combined={overall} → {decision}")
 
             st.divider()
 
