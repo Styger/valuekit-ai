@@ -1440,7 +1440,7 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
     st.subheader("📊 Quantitative Fundamentals")
     st.caption("Financial health check — runs independently of RAG documents.")
     try:
-        fund_results = check_fundamentals(ticker, year)
+        fund_results = check_fundamentals(ticker, year, base_year=year)
         _STATUS_ICONS = {"OK": "✅", "Warning": "⚠️", "Flag": "🚩", "N/A": "—"}
         cols = st.columns(len(fund_results))
         for col, check in zip(cols, fund_results):

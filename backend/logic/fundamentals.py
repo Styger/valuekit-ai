@@ -41,16 +41,24 @@ def _status(value, ok_threshold, warn_threshold, lower_is_better=False) -> str:
             return "Flag"
 
 
-def check_fundamentals(ticker: str, year: int) -> List[Dict]:
+def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
     """
     Run quantitative fundamentals check for a ticker.
 
+    Args:
+        ticker:    Stock ticker
+        year:      Requested year — fed to get_latest_common_year to find
+                   actual_year for balance-sheet point-in-time checks
+                   (Debt/Equity, Current Ratio).
+        base_year: Explicit anchor for 3-year trend windows.
+                   Trend loops use base_year-2 → base_year-1 → base_year.
+
     Checks:
-      1. Debt/Equity        — Flag if > 2.0, Warning if > 1.0
-      2. FCF Trend (3Y)     — OK if positive & growing, Warning if flat, Flag if negative
-      3. Gross Margin Trend — OK if stable/improving, Warning if -5pp, Flag if -10pp
-      4. Net Margin Trend   — OK if stable/improving, Warning if -3pp, Flag if -7pp
-      5. Current Ratio      — Flag if < 1.0, Warning if < 1.5
+      1. Debt/Equity        — Flag if > 2.0, Warning if > 1.0  (uses actual_year)
+      2. FCF Trend (3Y)     — OK if positive & growing, Warning if flat, Flag if negative  (uses base_year)
+      3. Gross Margin Trend — OK if stable/improving, Warning if -5pp, Flag if -10pp  (uses base_year)
+      4. Net Margin Trend   — OK if stable/improving, Warning if -3pp, Flag if -7pp  (uses base_year)
+      5. Current Ratio      — Flag if < 1.0, Warning if < 1.5  (uses actual_year)
 
     Returns:
         List of dicts with keys: metric, value, status, note
@@ -104,7 +112,7 @@ def check_fundamentals(ticker: str, year: int) -> List[Dict]:
 
     # ── 2. FCF Trend (3 years) ────────────────────────────────────────────────
     fcf_years = []
-    for y in [actual_year - 2, actual_year - 1, actual_year]:
+    for y in [base_year - 2, base_year - 1, base_year]:
         row = get_year(cashflow, y)
         fcf = row.get("freeCashFlow")
         if fcf is not None:
@@ -149,7 +157,7 @@ def check_fundamentals(ticker: str, year: int) -> List[Dict]:
 
     # ── 3. Gross Margin Trend ─────────────────────────────────────────────────
     gm_years = []
-    for y in [actual_year - 2, actual_year - 1, actual_year]:
+    for y in [base_year - 2, base_year - 1, base_year]:
         row = get_year(income, y)
         rev = row.get("revenue") or 0
         gp = row.get("grossProfit") or 0
@@ -194,7 +202,7 @@ def check_fundamentals(ticker: str, year: int) -> List[Dict]:
 
     # ── 4. Net Margin Trend ───────────────────────────────────────────────────
     nm_years = []
-    for y in [actual_year - 2, actual_year - 1, actual_year]:
+    for y in [base_year - 2, base_year - 1, base_year]:
         row = get_year(income, y)
         rev = row.get("revenue") or 0
         ni = row.get("netIncome") or 0
@@ -269,7 +277,7 @@ def check_fundamentals(ticker: str, year: int) -> List[Dict]:
     log.info(
         "[fundamentals][check_complete] ticker=%s year=%d checks=%d",
         ticker,
-        actual_year,
+        base_year,
         len(results),
     )
     return results
@@ -278,6 +286,6 @@ def check_fundamentals(ticker: str, year: int) -> List[Dict]:
 if __name__ == "__main__":
     import json
 
-    results = check_fundamentals("AAPL", 2024)
+    results = check_fundamentals("AAPL", 2024, base_year=2024)
     for r in results:
         print(f"[{r['status']:7}] {r['metric']:25} {r['value']:30} → {r['note']}")
