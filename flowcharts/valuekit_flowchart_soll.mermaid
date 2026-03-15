@@ -47,9 +47,7 @@ flowchart TD
 
     P["InvestmentDecision ausgeben\nDecision · Confidence\nQuality Score · Valuation Score · Moat Score\nCombined Score · Reasoning"]
 
-    P --> PEERS["Peer Vergleich\nFMP + Claude Fallback → Peer-Liste\nautom. Vergleichstabelle:\nTicker · ROIC · Net Margin · CAGR · MOS%\n→ kein RAG, nur FMP-Daten"]
-
-    PEERS --> R([Dashboard rendern])
+    P --> R([Dashboard rendern])
 
     style QUANT   fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     style QUAL    fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
@@ -59,4 +57,3 @@ flowchart TD
     style BU      fill:#dcedc8,stroke:#558b2f
     style HO      fill:#fff9c4,stroke:#f9a825
     style PA      fill:#ffcdd2,stroke:#c62828
-    style PEERS   fill:#e8f5e9,stroke:#4caf50
