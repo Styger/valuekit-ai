@@ -6,6 +6,8 @@ Analyzes competitive advantages from SEC 10-K filings using RAG
 import logging
 import re
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -614,16 +616,45 @@ class MoatAnalyzer:
         relevance_samples: List[float] = []
         total_sources = 0
 
-        for moat_key in enabled_moats:
-            if moat_key not in self.MOAT_TYPES:
-                continue
-            moat_config = self.MOAT_TYPES[moat_key]
-            moat_score = self.analyze_single_moat(ticker, moat_key, moat_config, top_k=top_k, temperature=temperature)
-            moats[moat_key] = moat_score
-            total_score += moat_score.score
-            if moat_score.sources_used > 0:
-                relevance_samples.append(moat_score.avg_relevance)
-                total_sources += moat_score.sources_used
+        valid_moats = {k: self.MOAT_TYPES[k] for k in enabled_moats if k in self.MOAT_TYPES}
+
+        t0 = time.monotonic()
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {
+                executor.submit(
+                    self.analyze_single_moat, ticker, moat_key, moat_config,
+                    top_k, temperature
+                ): moat_key
+                for moat_key, moat_config in valid_moats.items()
+            }
+            for future in as_completed(futures):
+                moat_key = futures[future]
+                try:
+                    moat_score = future.result()
+                except Exception as exc:
+                    log.warning(
+                        "[moat_analyzer][parallel_error] ticker=%s moat=%s error=%s",
+                        ticker, moat_key, exc,
+                    )
+                    moat_score = MoatScore(
+                        name=valid_moats[moat_key]["name"],
+                        score=0,
+                        evidence=["Analysis failed"],
+                        confidence="Low",
+                        sources_used=0,
+                        avg_relevance=0.0,
+                    )
+                moats[moat_key] = moat_score
+                total_score += moat_score.score
+                if moat_score.sources_used > 0:
+                    relevance_samples.append(moat_score.avg_relevance)
+                    total_sources += moat_score.sources_used
+
+        duration = time.monotonic() - t0
+        log.info(
+            "[moat_analyzer][parallel_complete] ticker=%s duration=%.1fs moats=%d",
+            ticker, duration, len(moats),
+        )
 
         avg_relevance = (
             sum(relevance_samples) / len(relevance_samples)
