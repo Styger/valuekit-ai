@@ -49,8 +49,8 @@ class VectorStore:
             model=self.config.EMBEDDING_MODEL,
         )
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.config.CHUNK_SIZE,
-            chunk_overlap=self.config.CHUNK_OVERLAP,
+            chunk_size=self.config.CHUNK_SIZE,  # 1000 characters per chunk
+            chunk_overlap=self.config.CHUNK_OVERLAP,  # 100 characters overlap
             separators=["\n\n", "\n", ".", " ", ""],
         )
         self._initialize_chroma()
@@ -114,7 +114,7 @@ class VectorStore:
         query: str,
         k: int = None,
         ticker: str = None,
-        fetch_k: int = 20,
+        fetch_k: int = 40,
     ) -> List[tuple]:
         """
         Search with relevance scores.
@@ -140,13 +140,17 @@ class VectorStore:
             )
             log.debug(
                 "[vector_store][similarity_search] ticker=%s fetch_k=%d filter=%s raw_returned=%d",
-                ticker, fetch_k, where_filter, len(results),
+                ticker,
+                fetch_k,
+                where_filter,
+                len(results),
             )
         else:
             results = self.vectorstore.similarity_search_with_score(query, k=k)
             log.debug(
                 "[vector_store][similarity_search] no_ticker_filter fetch_k=%d raw_returned=%d",
-                k, len(results),
+                k,
+                len(results),
             )
 
         return results
