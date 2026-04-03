@@ -9,7 +9,8 @@
       "Bash(/c/Python312/python.exe:*)",
       "Bash(ls:*)",
       "Bash(find \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/core\" -name \"*.pyc\" -delete && echo \"done\")",
-      "Bash(find \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend\" -name \"*.pyc\" -delete && echo \"cleared\")"
+      "Bash(find \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend\" -name \"*.pyc\" -delete && echo \"cleared\")",
+      "Skill(update-config)"
     ]
   }
 }

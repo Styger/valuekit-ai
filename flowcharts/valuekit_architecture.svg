@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 900" width="1100" height="900"
+     font-family="Arial,Helvetica,sans-serif">
+
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+      <polygon points="0 0, 9 3.5, 0 7" fill="#555"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="900" fill="#ffffff"/>
+
+  <!-- ─────────────── TITLE ─────────────── -->
+  <text x="550" y="28" text-anchor="middle"
+        font-size="17" font-weight="bold" fill="#111">ValueKit AI — Component Architecture</text>
+
+  <!-- ═══════════════════════════════════════════════════
+       LAYER 1 · FRONTEND
+       ═══════════════════════════════════════════════════ -->
+  <rect x="20" y="38" width="1060" height="100" rx="8"
+        fill="#f0f0f0" stroke="#bbb" stroke-width="1.5"/>
+  <text x="32" y="57" font-size="11" font-weight="bold" fill="#888">FRONTEND</text>
+
+  <!-- app.py -->
+  <rect x="375" y="48" width="350" height="78" rx="6"
+        fill="#dcdcdc" stroke="#999" stroke-width="1.5"/>
+  <text x="550" y="72" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#333">app.py</text>
+  <text x="550" y="90" text-anchor="middle"
+        font-size="11" fill="#666">Streamlit UI · Authentication · Page Routing</text>
+
+  <!-- Arrow L1 → L2 -->
+  <line x1="550" y1="138" x2="550" y2="158"
+        stroke="#555" stroke-width="1.8" marker-end="url(#arr)"/>
+
+  <!-- ═══════════════════════════════════════════════════
+       LAYER 2 · CORE ORCHESTRATION
+       ═══════════════════════════════════════════════════ -->
+  <rect x="20" y="158" width="1060" height="130" rx="8"
+        fill="#f0e8fc" stroke="#8030c0" stroke-width="1.5"/>
+  <text x="32" y="177" font-size="11" font-weight="bold" fill="#7030b0">CORE ORCHESTRATION</text>
+
+  <!-- investment_analyzer.py  (x=55, w=290, center=200) -->
+  <rect x="55" y="185" width="290" height="94" rx="5"
+        fill="#dcc8f0" stroke="#8030c0" stroke-width="1.5"/>
+  <text x="200" y="207" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#4020a0">investment_analyzer.py</text>
+  <text x="200" y="224" text-anchor="middle"
+        font-size="11" fill="#6030b0">InvestmentDecision</text>
+  <text x="200" y="241" text-anchor="middle"
+        font-size="11" fill="#6030b0">_make_decision()</text>
+  <text x="200" y="258" text-anchor="middle"
+        font-size="11" fill="#8050c0">Quality 40% · Val 20% · Moat 40%</text>
+
+  <!-- valuekit_integration.py  (x=405, w=290, center=550) -->
+  <rect x="405" y="185" width="290" height="94" rx="5"
+        fill="#dcc8f0" stroke="#8030c0" stroke-width="1.5"/>
+  <text x="550" y="207" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#4020a0">valuekit_integration.py</text>
+  <text x="550" y="224" text-anchor="middle"
+        font-size="11" fill="#6030b0">ValueKitAnalyzer</text>
+  <text x="550" y="241" text-anchor="middle"
+        font-size="11" fill="#6030b0">analyze_stock_complete()</text>
+  <text x="550" y="258" text-anchor="middle"
+        font-size="11" fill="#8050c0">Orchestrates full pipeline</text>
+
+  <!-- analysis_config.py  (x=755, w=290, center=900) -->
+  <rect x="755" y="185" width="290" height="94" rx="5"
+        fill="#dcc8f0" stroke="#8030c0" stroke-width="1.5"/>
+  <text x="900" y="207" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#4020a0">analysis_config.py</text>
+  <text x="900" y="224" text-anchor="middle"
+        font-size="11" fill="#6030b0">AnalysisConfig</text>
+  <text x="900" y="241" text-anchor="middle"
+        font-size="11" fill="#6030b0">get_enabled_moats()</text>
+  <text x="900" y="258" text-anchor="middle"
+        font-size="11" fill="#8050c0">Module feature flags</text>
+
+  <!-- T-fork L2 → L3  (diverging) -->
+  <line x1="550" y1="279" x2="550" y2="296"
+        stroke="#555" stroke-width="1.8"/>
+  <line x1="280" y1="296" x2="820" y2="296"
+        stroke="#555" stroke-width="1.8"/>
+  <line x1="280" y1="296" x2="280" y2="309"
+        stroke="#555" stroke-width="1.8" marker-end="url(#arr)"/>
+  <line x1="820" y1="296" x2="820" y2="309"
+        stroke="#555" stroke-width="1.8" marker-end="url(#arr)"/>
+
+  <!-- ═══════════════════════════════════════════════════
+       LAYER 3 · QUANTITATIVE MODULE  (left)
+       ═══════════════════════════════════════════════════ -->
+  <rect x="20" y="309" width="520" height="178" rx="8"
+        fill="#dff0ea" stroke="#2a9d8f" stroke-width="1.8"/>
+  <text x="32" y="328" font-size="11" font-weight="bold" fill="#1a7060">QUANTITATIVE MODULE</text>
+
+  <!-- Row 1 — cagr.py (x=30, w=155, center=107) -->
+  <rect x="30" y="336" width="155" height="62" rx="4"
+        fill="#b8e8d8" stroke="#2a9d8f" stroke-width="1.2"/>
+  <text x="107" y="357" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a5a50">cagr.py</text>
+  <text x="107" y="374" text-anchor="middle"
+        font-size="11" fill="#2a8070">CAGR calculations</text>
+
+  <!-- mos.py (x=199, center=276) -->
+  <rect x="199" y="336" width="155" height="62" rx="4"
+        fill="#b8e8d8" stroke="#2a9d8f" stroke-width="1.2"/>
+  <text x="276" y="357" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a5a50">mos.py</text>
+  <text x="276" y="374" text-anchor="middle"
+        font-size="11" fill="#2a8070">Margin of Safety</text>
+
+  <!-- tencap.py (x=368, center=445) -->
+  <rect x="368" y="336" width="155" height="62" rx="4"
+        fill="#b8e8d8" stroke="#2a9d8f" stroke-width="1.2"/>
+  <text x="445" y="357" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a5a50">tencap.py</text>
+  <text x="445" y="374" text-anchor="middle"
+        font-size="11" fill="#2a8070">TenCap valuation</text>
+
+  <!-- Row 2 — pbt.py (x=30, center=107) -->
+  <rect x="30" y="412" width="155" height="62" rx="4"
+        fill="#b8e8d8" stroke="#2a9d8f" stroke-width="1.2"/>
+  <text x="107" y="433" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a5a50">pbt.py</text>
+  <text x="107" y="450" text-anchor="middle"
+        font-size="11" fill="#2a8070">Payback Time</text>
+
+  <!-- fundamentals.py (x=199, center=276) -->
+  <rect x="199" y="412" width="155" height="62" rx="4"
+        fill="#b8e8d8" stroke="#2a9d8f" stroke-width="1.2"/>
+  <text x="276" y="433" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a5a50">fundamentals.py</text>
+  <text x="276" y="450" text-anchor="middle"
+        font-size="11" fill="#2a8070">Debt/EBITDA · FCF · ROIC</text>
+
+  <!-- profitability.py (x=368, center=445) -->
+  <rect x="368" y="412" width="155" height="62" rx="4"
+        fill="#b8e8d8" stroke="#2a9d8f" stroke-width="1.2"/>
+  <text x="445" y="433" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a5a50">profitability.py</text>
+  <text x="445" y="450" text-anchor="middle"
+        font-size="11" fill="#2a8070">ROE · ROA · ROIC · Margen · FCF Yield</text>
+
+  <!-- ═══════════════════════════════════════════════════
+       LAYER 3 · QUALITATIVE MODULE  (right)
+       ═══════════════════════════════════════════════════ -->
+  <rect x="560" y="309" width="520" height="178" rx="8"
+        fill="#d8eaf8" stroke="#2980b9" stroke-width="1.8"/>
+  <text x="572" y="328" font-size="11" font-weight="bold" fill="#1a5a90">QUALITATIVE MODULE</text>
+
+  <!-- moat_analyzer.py (x=574, w=152, center=650) -->
+  <rect x="574" y="348" width="152" height="96" rx="4"
+        fill="#b8d8f0" stroke="#2980b9" stroke-width="1.2"/>
+  <text x="650" y="371" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a4a80">moat_analyzer.py</text>
+  <text x="650" y="389" text-anchor="middle"
+        font-size="11" fill="#2070a0">MoatAnalyzer</text>
+  <text x="650" y="406" text-anchor="middle"
+        font-size="11" fill="#2070a0">5 moat types · RAG</text>
+
+  <!-- rag_service.py (x=744, w=152, center=820) -->
+  <rect x="744" y="348" width="152" height="96" rx="4"
+        fill="#b8d8f0" stroke="#2980b9" stroke-width="1.2"/>
+  <text x="820" y="371" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a4a80">rag_service.py</text>
+  <text x="820" y="389" text-anchor="middle"
+        font-size="11" fill="#2070a0">analyze_with_rag()</text>
+  <text x="820" y="406" text-anchor="middle"
+        font-size="11" fill="#2070a0">Claude Sonnet T=0</text>
+
+  <!-- vector_store.py (x=914, w=152, center=990) -->
+  <rect x="914" y="348" width="152" height="96" rx="4"
+        fill="#b8d8f0" stroke="#2980b9" stroke-width="1.2"/>
+  <text x="990" y="371" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#1a4a80">vector_store.py</text>
+  <text x="990" y="389" text-anchor="middle"
+        font-size="11" fill="#2070a0">ChromaDB</text>
+  <text x="990" y="406" text-anchor="middle"
+        font-size="11" fill="#2070a0">Voyage AI embeds</text>
+
+  <!-- T-merge L3 → L4  (converging) -->
+  <line x1="280" y1="487" x2="280" y2="502"
+        stroke="#555" stroke-width="1.8"/>
+  <line x1="820" y1="487" x2="820" y2="502"
+        stroke="#555" stroke-width="1.8"/>
+  <line x1="280" y1="502" x2="820" y2="502"
+        stroke="#555" stroke-width="1.8"/>
+  <line x1="550" y1="502" x2="550" y2="517"
+        stroke="#555" stroke-width="1.8" marker-end="url(#arr)"/>
+
+  <!-- ═══════════════════════════════════════════════════
+       LAYER 4 · DATA LAYER
+       ═══════════════════════════════════════════════════ -->
+  <rect x="20" y="517" width="1060" height="122" rx="8"
+        fill="#fef8e4" stroke="#d09000" stroke-width="1.5"/>
+  <text x="32" y="536" font-size="11" font-weight="bold" fill="#9a6000">DATA LAYER</text>
+
+  <!-- fmp_api.py  (x=75, w=178, center=164) -->
+  <rect x="75" y="543" width="178" height="84" rx="4"
+        fill="#fde8a0" stroke="#d09000" stroke-width="1.2"/>
+  <text x="164" y="565" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#7a4800">fmp_api.py</text>
+  <text x="164" y="582" text-anchor="middle"
+        font-size="11" fill="#9a6000">FMP API Wrapper</text>
+  <text x="164" y="598" text-anchor="middle"
+        font-size="11" fill="#9a6000">SHA-256 cache</text>
+
+  <!-- yahoo_news_fetcher.py  (x=268, center=357) -->
+  <rect x="268" y="543" width="178" height="84" rx="4"
+        fill="#fde8a0" stroke="#d09000" stroke-width="1.2"/>
+  <text x="357" y="565" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#7a4800">yahoo_news_fetcher.py</text>
+  <text x="357" y="582" text-anchor="middle"
+        font-size="11" fill="#9a6000">Earnings call</text>
+  <text x="357" y="598" text-anchor="middle"
+        font-size="11" fill="#9a6000">news articles</text>
+
+  <!-- yahoo_info_fetcher.py  (x=461, center=550) -->
+  <rect x="461" y="543" width="178" height="84" rx="4"
+        fill="#fde8a0" stroke="#d09000" stroke-width="1.2"/>
+  <text x="550" y="565" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#7a4800">yahoo_info_fetcher.py</text>
+  <text x="550" y="582" text-anchor="middle"
+        font-size="11" fill="#9a6000">Company info</text>
+  <text x="550" y="598" text-anchor="middle"
+        font-size="11" fill="#9a6000">sector · description</text>
+
+  <!-- cache_manager.py  (x=654, center=743) -->
+  <rect x="654" y="543" width="178" height="84" rx="4"
+        fill="#fde8a0" stroke="#d09000" stroke-width="1.2"/>
+  <text x="743" y="565" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#7a4800">cache_manager.py</text>
+  <text x="743" y="582" text-anchor="middle"
+        font-size="11" fill="#9a6000">TTL-based</text>
+  <text x="743" y="598" text-anchor="middle"
+        font-size="11" fill="#9a6000">SHA-256 keys</text>
+
+  <!-- ChromaDB  (x=847, center=936) -->
+  <rect x="847" y="543" width="178" height="84" rx="4"
+        fill="#fde8a0" stroke="#d09000" stroke-width="1.2"/>
+  <text x="936" y="565" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#7a4800">ChromaDB</text>
+  <text x="936" y="582" text-anchor="middle"
+        font-size="11" fill="#9a6000">Vector store</text>
+  <text x="936" y="598" text-anchor="middle"
+        font-size="11" fill="#9a6000">SEC + earnings docs</text>
+
+  <!-- Arrow L4 → L5 -->
+  <line x1="550" y1="639" x2="550" y2="659"
+        stroke="#555" stroke-width="1.8" marker-end="url(#arr)"/>
+
+  <!-- ═══════════════════════════════════════════════════
+       LAYER 5 · EXTERNAL SERVICES  (dashed)
+       ═══════════════════════════════════════════════════ -->
+  <rect x="20" y="659" width="1060" height="122" rx="8"
+        fill="#f8f8f8" stroke="#aaa" stroke-width="1.5" stroke-dasharray="7,4"/>
+  <text x="32" y="678" font-size="11" font-weight="bold" fill="#888">EXTERNAL SERVICES</text>
+
+  <!-- FMP API  (x=75, w=178, center=164) -->
+  <rect x="75" y="685" width="178" height="86" rx="4"
+        fill="#eeeeee" stroke="#aaa" stroke-width="1.2" stroke-dasharray="5,2.5"/>
+  <text x="164" y="708" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#444">FMP API</text>
+  <text x="164" y="726" text-anchor="middle"
+        font-size="11" fill="#666">Financial Modeling</text>
+  <text x="164" y="743" text-anchor="middle"
+        font-size="11" fill="#666">Prep — financials</text>
+
+  <!-- Yahoo Finance  (x=268, center=357) -->
+  <rect x="268" y="685" width="178" height="86" rx="4"
+        fill="#eeeeee" stroke="#aaa" stroke-width="1.2" stroke-dasharray="5,2.5"/>
+  <text x="357" y="708" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#444">Yahoo Finance</text>
+  <text x="357" y="726" text-anchor="middle"
+        font-size="11" fill="#666">News &amp; company</text>
+  <text x="357" y="743" text-anchor="middle"
+        font-size="11" fill="#666">information</text>
+
+  <!-- SEC EDGAR  (x=461, center=550) -->
+  <rect x="461" y="685" width="178" height="86" rx="4"
+        fill="#eeeeee" stroke="#aaa" stroke-width="1.2" stroke-dasharray="5,2.5"/>
+  <text x="550" y="708" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#444">SEC EDGAR</text>
+  <text x="550" y="726" text-anchor="middle"
+        font-size="11" fill="#666">10-K / 10-Q filings</text>
+  <text x="550" y="743" text-anchor="middle"
+        font-size="11" fill="#666">RAG source documents</text>
+
+  <!-- Anthropic API  (x=654, center=743) -->
+  <rect x="654" y="685" width="178" height="86" rx="4"
+        fill="#eeeeee" stroke="#aaa" stroke-width="1.2" stroke-dasharray="5,2.5"/>
+  <text x="743" y="708" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#444">Anthropic API</text>
+  <text x="743" y="726" text-anchor="middle"
+        font-size="11" fill="#666">Claude Sonnet</text>
+  <text x="743" y="743" text-anchor="middle"
+        font-size="11" fill="#666">LLM inference</text>
+
+  <!-- Voyage AI  (x=847, center=936) -->
+  <rect x="847" y="685" width="178" height="86" rx="4"
+        fill="#eeeeee" stroke="#aaa" stroke-width="1.2" stroke-dasharray="5,2.5"/>
+  <text x="936" y="708" text-anchor="middle"
+        font-size="13" font-weight="bold" fill="#444">Voyage AI</text>
+  <text x="936" y="726" text-anchor="middle"
+        font-size="11" fill="#666">voyage-finance-2</text>
+  <text x="936" y="743" text-anchor="middle"
+        font-size="11" fill="#666">Embeddings</text>
+
+  <!-- ─────────────── LEGEND ─────────────── -->
+  <text x="30" y="800" font-size="11" font-weight="bold" fill="#555">LEGEND:</text>
+
+  <rect x="100" y="789" width="15" height="14" rx="2" fill="#dcdcdc" stroke="#999" stroke-width="1"/>
+  <text x="120" y="800" font-size="11" fill="#555">Frontend</text>
+
+  <rect x="188" y="789" width="15" height="14" rx="2" fill="#dcc8f0" stroke="#8030c0" stroke-width="1"/>
+  <text x="208" y="800" font-size="11" fill="#555">Core</text>
+
+  <rect x="248" y="789" width="15" height="14" rx="2" fill="#b8e8d8" stroke="#2a9d8f" stroke-width="1"/>
+  <text x="268" y="800" font-size="11" fill="#555">Quantitative</text>
+
+  <rect x="368" y="789" width="15" height="14" rx="2" fill="#b8d8f0" stroke="#2980b9" stroke-width="1"/>
+  <text x="388" y="800" font-size="11" fill="#555">Qualitative</text>
+
+  <rect x="470" y="789" width="15" height="14" rx="2" fill="#fde8a0" stroke="#d09000" stroke-width="1"/>
+  <text x="490" y="800" font-size="11" fill="#555">Data Layer</text>
+
+  <rect x="572" y="789" width="15" height="14" rx="2" fill="#eeeeee" stroke="#aaa"
+        stroke-width="1" stroke-dasharray="3,1.5"/>
+  <text x="592" y="800" font-size="11" fill="#555">External Services (dashed)</text>
+
+  <!-- ─────────────── SCORE FORMULA ─────────────── -->
+  <rect x="30" y="815" width="1040" height="54" rx="6"
+        fill="#fff8f0" stroke="#ddd" stroke-width="1"/>
+  <text x="550" y="836" text-anchor="middle" font-size="11" fill="#555">
+    Combined Score = (Quality Score × 0.40) + (Valuation Score × 0.20) + (Moat Score × 0.40)
+  </text>
+  <text x="550" y="855" text-anchor="middle" font-size="11" fill="#888">
+    Thresholds: ≥80 STRONG BUY · ≥70 BUY · ≥50 HOLD · &lt;50 PASS
+  </text>
+
+</svg>

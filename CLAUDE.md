@@ -296,12 +296,22 @@ api_key = "..."
 
 [auth.credentials.usernames.admin]
 name = "Admin"
-password = "$2b$12$..."  # bcrypt hash
+password = "$2b$12$..."  # bcrypt hash of HMAC-SHA256(pepper, password)
 
 [auth]
 cookie_name = "valuekit_auth"
-cookie_key  = "..."
+cookie_key  = "..."          # random 32+ char secret (HMAC key for session cookie)
 cookie_expiry_days = 1
+pepper = "..."               # random 32+ char secret — never commit the real value
+
+# To generate a new peppered hash, run:
+#   python - <<'EOF'
+#   import bcrypt, hashlib, hmac, getpass
+#   pepper   = input("pepper: ")
+#   pw       = getpass.getpass("password: ")
+#   peppered = hmac.new(pepper.encode(), pw.encode(), hashlib.sha256).hexdigest()
+#   print(bcrypt.hashpw(peppered.encode(), bcrypt.gensalt(12)).decode())
+#   EOF
 ```
 
 ---

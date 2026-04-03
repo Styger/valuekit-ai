@@ -35,6 +35,9 @@ from backend.logic.cagr import (
 )
 from backend.api import fmp_api
 import streamlit_authenticator as stauth
+import bcrypt as _bcrypt_module
+import hashlib as _hashlib_module
+import hmac as _hmac_module
 
 from backend.logic.fundamentals import check_fundamentals
 
@@ -1911,6 +1914,34 @@ def _page_overview():
         _render_quant_pipeline(result, mos_pct)
 
 
+# ─── Auth helpers ────────────────────────────────────────────────────────────
+
+
+def _apply_pepper_patch(pepper: str) -> None:
+    """Patch bcrypt.checkpw to apply an HMAC-SHA256 pepper before verification.
+
+    The password hash stored in secrets.toml must be generated with the same
+    pepper.  Use this one-liner to produce a new hash:
+
+        python - <<'EOF'
+        import bcrypt, hashlib, hmac, getpass
+        pepper  = input("pepper: ")
+        pw      = getpass.getpass("password: ")
+        peppered = hmac.new(pepper.encode(), pw.encode(), hashlib.sha256).hexdigest()
+        print(bcrypt.hashpw(peppered.encode(), bcrypt.gensalt(12)).decode())
+        EOF
+    """
+    _real_checkpw = _bcrypt_module.checkpw
+
+    def _peppered_checkpw(password: bytes, hashed_password: bytes) -> bool:
+        peppered = _hmac_module.new(
+            pepper.encode(), password, _hashlib_module.sha256
+        ).hexdigest().encode()
+        return _real_checkpw(peppered, hashed_password)
+
+    _bcrypt_module.checkpw = _peppered_checkpw
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 
@@ -1918,6 +1949,12 @@ def main():
     _init_session_state()
 
     creds = st.secrets.get("auth", {})
+
+    pepper = creds.get("pepper", "")
+    if pepper:
+        _apply_pepper_patch(pepper)
+    else:
+        log.warning("[auth] pepper not configured in secrets.toml — falling back to bcrypt-only")
 
     import json
 
