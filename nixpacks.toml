@@ -2,7 +2,11 @@
 nixPkgs = ["python312", "bash"]
 
 [phases.install]
-cmds = ["/opt/venv/bin/pip install -r requirements.txt"]
+cmds = [
+  "python3.12 -m venv /opt/venv",
+  "/opt/venv/bin/pip install --upgrade pip",
+  "/opt/venv/bin/pip install -r requirements.txt"
+]
 
 [phases.build]
 cmds = []

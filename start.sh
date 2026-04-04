@@ -33,7 +33,7 @@ EOF
 
 echo "[start.sh] secrets.toml written"
 
-exec streamlit run frontend/app.py \
+exec /opt/venv/bin/streamlit run frontend/app.py \
   --server.port "${PORT:-8501}" \
   --server.address "0.0.0.0" \
   --server.headless true \
