@@ -3,7 +3,7 @@ import toml
 from pathlib import Path
 import sys
 
-PIPELINE_VERSION = "1.0.0"
+PIPELINE_VERSION = "1.0.1"
 
 # Valuation defaults (used by app.py and displayed in Pipeline Configuration)
 DEFAULT_DISCOUNT_RATE = 0.15   # 15%
@@ -69,7 +69,7 @@ class RAGConfig:
 
     # Model Settings
     EMBEDDING_MODEL = "voyage-finance-2"  # Spezialisiert auf Financial Data
-    LLM_MODEL = "claude-sonnet-4-20250514"
+    LLM_MODEL = "claude-sonnet-4-6"
     LLM_TEMPERATURE = 0.0  # Für präzise quantitative Analysen
 
     # Retrieval Settings
