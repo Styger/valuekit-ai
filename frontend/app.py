@@ -1816,8 +1816,8 @@ def _page_overview():
                 )
 
             except Exception as e:
-                log.error("[app][overview_error] ticker=%s error=%s", ticker_input, e)
-                st.error("An error occurred during analysis. Please try again.")
+                log.error("[app][overview_error] ticker=%s error=%s", ticker_input, e, exc_info=True)
+                st.error(f"An error occurred during analysis: {e}")
 
     # ── Render last result (persists across reruns, e.g. from sidebar refresh) ──
     _ov = st.session_state.get("ov_result")
