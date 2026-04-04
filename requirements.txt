@@ -14,9 +14,10 @@ numpy==2.2.4
 pandas==2.2.3
 pydantic==2.12.4
 python-dateutil==2.9.0.post0
+pyrate-limiter==4.1.0
 pytz==2025.2
 requests==2.32.5
-sec-edgar-downloader==5.0.3
+sec-edgar-downloader==5.1.0
 streamlit==1.49.1
 streamlit-authenticator==0.4.2
 toml==0.10.2
