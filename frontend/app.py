@@ -39,6 +39,7 @@ import bcrypt as _bcrypt_module
 import hashlib as _hashlib_module
 import hmac as _hmac_module
 
+
 from backend.logic.fundamentals import check_fundamentals
 
 from backend.logic.growth_consensus import get_growth_consensus
@@ -1920,6 +1921,8 @@ def _page_overview():
 def _apply_pepper_patch(pepper: str) -> None:
     """Patch bcrypt.checkpw to apply an HMAC-SHA256 pepper before verification.
 
+    Only patches once per process — safe to call on every Streamlit rerun.
+
     The password hash stored in secrets.toml must be generated with the same
     pepper.  Use this one-liner to produce a new hash:
 
@@ -1931,6 +1934,8 @@ def _apply_pepper_patch(pepper: str) -> None:
         print(bcrypt.hashpw(peppered.encode(), bcrypt.gensalt(12)).decode())
         EOF
     """
+    if getattr(_bcrypt_module, "_valuekit_pepper_patched", False):
+        return
     _real_checkpw = _bcrypt_module.checkpw
 
     def _peppered_checkpw(password: bytes, hashed_password: bytes) -> bool:
@@ -1940,6 +1945,7 @@ def _apply_pepper_patch(pepper: str) -> None:
         return _real_checkpw(peppered, hashed_password)
 
     _bcrypt_module.checkpw = _peppered_checkpw
+    _bcrypt_module._valuekit_pepper_patched = True
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
