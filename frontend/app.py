@@ -1467,7 +1467,7 @@ def _render_fundamentals(ticker: str, year: int):
 
 def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
     """
-    Render Quality Score, Valuation Score, MOS, TenCap, PBT, Profitability.
+    Render Robustness Score, Valuation Score, MOS, TenCap, PBT, Profitability.
     Called from _page_overview() and the 'Full Pipeline Overview' expander on
     _page_moat().  No RAG calls — only FMP quantitative data (all cached).
 
@@ -1483,8 +1483,8 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
     if ai:
         sc1, sc2 = st.columns(2)
         sc1.metric(
-            "Quality Score (40%)",
-            f"{ai.get('quantitative_score', 0)} / 100",
+            "Robustness Score (40%)",
+            f"{ai.get('robustness_score', 0)} / 100",
             help="ROIC · FCF Yield · Net Margin · CAGR",
         )
         sc2.metric(
@@ -1858,8 +1858,8 @@ def _page_overview():
             # Row 1: the three component scores + combined
             cs1, cs2, cs3, cs4 = st.columns(4)
             cs1.metric(
-                "Quality Score (40%)",
-                f"{ai.get('quantitative_score', 0)} / 100",
+                "Robustness Score (40%)",
+                f"{ai.get('robustness_score', 0)} / 100",
                 help="ROIC · FCF Yield · Net Margin · CAGR",
             )
             cs2.metric(

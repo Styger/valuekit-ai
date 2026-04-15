@@ -3,7 +3,7 @@ Integrated Investment Analyzer
 Combines quantitative metrics with moat analysis for final decision.
 
 3-Score Model:
-  Quality Score   (40%) — ROIC, FCF Yield, Net Margin, CAGR
+  Robustness Score (40%) — ROIC, FCF Yield, Net Margin, CAGR
   Valuation Score (20%) — price vs fair value (MOS / TenCap / PBT)
   Moat Score      (40%) — RAG qualitative moat analysis
 """
@@ -32,7 +32,7 @@ class InvestmentDecision:
     ticker: str
     decision: str           # "STRONG BUY", "BUY", "HOLD", "PASS"
     confidence: str         # "High", "Medium", "Low"
-    quantitative_score: int  # Quality Score 0-100
+    robustness_score: int    # Robustness Score 0-100
     valuation_score: int     # Valuation Score 0-100
     qualitative_score: int   # Moat Score normalized 0-100
     overall_score: int       # Combined Score 0-100
@@ -48,7 +48,7 @@ class InvestmentDecision:
             "ticker": self.ticker,
             "decision": self.decision,
             "confidence": self.confidence,
-            "quantitative_score": self.quantitative_score,
+            "robustness_score": self.robustness_score,
             "valuation_score": self.valuation_score,
             "qualitative_score": self.qualitative_score,
             "overall_score": self.overall_score,
@@ -83,13 +83,13 @@ class IntegratedAnalyzer:
 
     # ── Score calculators ────────────────────────────────────────────────────
 
-    def _calculate_quality_score(
+    def _calculate_robustness_score(
         self,
         profitability_result: Optional[Dict],
         growth_rate: float,
     ) -> int:
         """
-        Quality Score: 0–100
+        Robustness Score: 0–100
         ROIC (40) + FCF Yield (20) + Net Margin (20) + CAGR (20)
         All inputs are decimals (e.g. 0.25 = 25%).
         """
@@ -126,7 +126,7 @@ class IntegratedAnalyzer:
 
         result = min(100, score)
         log.debug(
-            "[investment_analyzer][quality_score] roic=%.3f fcf_yield=%.3f "
+            "[investment_analyzer][robustness_score] roic=%.3f fcf_yield=%.3f "
             "net_margin=%.3f cagr=%.3f score=%d",
             roic, fcf_yield, nm, cagr, result,
         )
@@ -199,13 +199,13 @@ class IntegratedAnalyzer:
 
     def _combine_scores(
         self,
-        quality_score: int,
+        robustness_score: int,
         valuation_score: int,
         moat_analysis: MoatAnalysis,
     ) -> InvestmentDecision:
         """
-        Combine Quality (40%) + Valuation (20%) + Moat (40%) scores.
-        Combined Score = Q×0.40 + V×0.20 + M×0.40
+        Combine Robustness (40%) + Valuation (20%) + Moat (40%) scores.
+        Combined Score = R×0.40 + V×0.20 + M×0.40
         """
         num_moats = len(moat_analysis.moats)
         max_moat = num_moats * 10 if num_moats > 0 else 50
@@ -214,7 +214,7 @@ class IntegratedAnalyzer:
         )
 
         overall = int(
-            quality_score * 0.40
+            robustness_score * 0.40
             + valuation_score * 0.20
             + moat_normalized * 0.40
         )
@@ -222,13 +222,13 @@ class IntegratedAnalyzer:
         decision, confidence = self._make_decision(overall)
 
         reasoning = self._generate_reasoning(
-            moat_analysis.ticker, quality_score, moat_analysis, decision
+            moat_analysis.ticker, robustness_score, moat_analysis, decision
         )
 
         log.debug(
-            "[investment_analyzer][combine_scores] quality=%d valuation=%d "
+            "[investment_analyzer][combine_scores] robustness=%d valuation=%d "
             "moat_normalized=%d overall=%d decision=%s confidence=%s",
-            quality_score, valuation_score, moat_normalized,
+            robustness_score, valuation_score, moat_normalized,
             overall, decision, confidence,
         )
 
@@ -236,7 +236,7 @@ class IntegratedAnalyzer:
             ticker=moat_analysis.ticker,
             decision=decision,
             confidence=confidence,
-            quantitative_score=quality_score,
+            robustness_score=robustness_score,
             valuation_score=valuation_score,
             qualitative_score=moat_normalized,
             overall_score=overall,
@@ -248,18 +248,18 @@ class IntegratedAnalyzer:
     def _generate_reasoning(
         self,
         ticker: str,
-        quality_score: int,
+        robustness_score: int,
         moat_analysis: MoatAnalysis,
         decision: str,
     ) -> str:
         parts = [f"{ticker} analysis indicates a {decision} recommendation."]
 
-        if quality_score >= 70:
-            parts.append("Quantitative metrics show strong quality fundamentals.")
-        elif quality_score >= 50:
-            parts.append("Quantitative metrics show acceptable quality fundamentals.")
+        if robustness_score >= 70:
+            parts.append("Quantitative metrics show strong robustness fundamentals.")
+        elif robustness_score >= 50:
+            parts.append("Quantitative metrics show acceptable robustness fundamentals.")
         else:
-            parts.append("Quantitative metrics indicate weak quality fundamentals.")
+            parts.append("Quantitative metrics indicate weak robustness fundamentals.")
 
         if moat_analysis.moat_strength == "Wide":
             parts.append("The company appears to possess a wide economic moat.")
@@ -352,12 +352,12 @@ class IntegratedAnalyzer:
                 )
 
         # Calculate the three scores
-        quality_score = self._calculate_quality_score(profitability_result, growth_rate)
+        robustness_score = self._calculate_robustness_score(profitability_result, growth_rate)
         valuation_score = self._calculate_valuation_score(mos_result, tencap_result, pbt_result)
 
         log.info(
-            "[investment_analyzer][scores] ticker=%s quality=%d valuation=%d",
-            ticker, quality_score, valuation_score,
+            "[investment_analyzer][scores] ticker=%s robustness=%d valuation=%d",
+            ticker, robustness_score, valuation_score,
         )
 
         if config is None or config.run_moat_analysis:
@@ -373,7 +373,7 @@ class IntegratedAnalyzer:
             )
             log.info("[investment_analyzer][moat_skipped] ticker=%s", ticker)
 
-        decision = self._combine_scores(quality_score, valuation_score, moat_analysis)
+        decision = self._combine_scores(robustness_score, valuation_score, moat_analysis)
 
         # Attach raw results for traceability
         decision.quantitative_metrics = {
@@ -387,9 +387,9 @@ class IntegratedAnalyzer:
 
         log.info(
             "[investment_analyzer][complete] ticker=%s decision=%s confidence=%s "
-            "overall_score=%d quality=%d valuation=%d pipeline_version=%s",
+            "overall_score=%d robustness=%d valuation=%d pipeline_version=%s",
             ticker, decision.decision, decision.confidence,
-            decision.overall_score, quality_score, valuation_score, PIPELINE_VERSION,
+            decision.overall_score, robustness_score, valuation_score, PIPELINE_VERSION,
         )
 
         return decision
