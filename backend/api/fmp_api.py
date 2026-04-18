@@ -1,4 +1,5 @@
 import requests
+import time as _time
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import os
@@ -9,6 +10,43 @@ import os
 from backend.cache import get_cache_manager
 
 log = logging.getLogger(__name__)
+
+
+def _http_get_with_retry(url: str, **kwargs) -> requests.Response:
+    """GET with exponential backoff (max 3 attempts, delays: 1 s, 2 s).
+
+    Retries on network errors (ConnectionError, Timeout) and HTTP 5xx responses.
+    Does NOT call raise_for_status() — callers handle status codes as before.
+    """
+    _delays = (1, 2)  # seconds before attempt 2 and attempt 3
+    _safe_url = re.sub(r"apikey=[^&]+", "apikey=***", url)
+    resp = None
+    for attempt in range(1, 4):  # attempts 1, 2, 3
+        try:
+            resp = requests.get(url, **kwargs)
+            if resp.status_code < 500 or attempt == 3:
+                return resp
+            # 5xx server error — retryable
+            delay = _delays[attempt - 1]
+            log.warning(
+                "[fmp_api][retry] attempt=%d/3 url=%s status=%d retrying_in=%ds",
+                attempt, _safe_url, resp.status_code, delay,
+            )
+            _time.sleep(delay)
+        except requests.exceptions.RequestException as exc:
+            if attempt == 3:
+                log.error(
+                    "[fmp_api][retry_exhausted] attempts=3 url=%s error=%s",
+                    _safe_url, exc,
+                )
+                raise
+            delay = _delays[attempt - 1]
+            log.warning(
+                "[fmp_api][retry] attempt=%d/3 url=%s error=%s retrying_in=%ds",
+                attempt, _safe_url, exc, delay,
+            )
+            _time.sleep(delay)
+    return resp  # final 5xx response after all attempts
 
 from pathlib import Path
 
@@ -146,7 +184,7 @@ def _fetch_balance_sheet_uncached(ticker, limit):
     """Fetch balance sheet without cache (internal use)"""
     api_key = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/balance-sheet-statement/{ticker}?limit={limit}&apikey={api_key}"
-    response = requests.get(url)
+    response = _http_get_with_retry(url, timeout=15)
     return response.json()
 
 
@@ -183,7 +221,7 @@ def _fetch_income_statement_uncached(ticker, limit):
     """Fetch income statement without cache (internal use)"""
     api_key = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/income-statement/{ticker}?limit={limit}&apikey={api_key}"
-    response = requests.get(url)
+    response = _http_get_with_retry(url, timeout=15)
     return response.json()
 
 
@@ -220,7 +258,7 @@ def _fetch_cashflow_statement_uncached(ticker, limit):
     """Fetch cashflow statement without cache (internal use)"""
     api_key = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/cash-flow-statement/{ticker}?limit={limit}&apikey={api_key}"
-    return requests.get(url).json()
+    return _http_get_with_retry(url, timeout=15).json()
 
 
 # ============================================================================
@@ -263,7 +301,7 @@ def _fetch_analyst_estimates_uncached(ticker: str, limit: int):
         f"https://financialmodelingprep.com/api/v3/analyst-estimates/{ticker}"
         f"?limit={limit}&apikey={api_key}"
     )
-    resp = requests.get(url, timeout=10)
+    resp = _http_get_with_retry(url, timeout=10)
     if resp.status_code != 200:
         import logging as _logging
         _logging.getLogger(__name__).warning(
@@ -307,7 +345,7 @@ def _fetch_key_metrics_uncached(ticker, limit):
     """Fetch key metrics without cache (internal use)"""
     api_key = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/key-metrics/{ticker}?limit={limit}&apikey={api_key}"
-    return requests.get(url).json()
+    return _http_get_with_retry(url, timeout=15).json()
 
 
 # ============================================================================
@@ -331,7 +369,7 @@ def _fetch_dcf_uncached(ticker):
     """Fetch DCF without cache (internal use)"""
     api_key = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/discounted-cash-flow/{ticker}?apikey={api_key}"
-    return requests.get(url).json()
+    return _http_get_with_retry(url, timeout=15).json()
 
 
 # ============================================================================
@@ -368,7 +406,7 @@ def _fetch_historical_price_uncached(ticker, date):
     api = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}"
     params = {"from": date, "to": date, "apikey": api}
-    return requests.get(url, params=params).json()
+    return _http_get_with_retry(url, params=params, timeout=15).json()
 
 
 # ============================================================================
@@ -425,7 +463,7 @@ def fetch_quote_short(ticker: str):
     """Low-level HTTP: holt einfache Quote-Daten (/v3/quote-short)."""
     api_key = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/quote-short/{ticker}?apikey={api_key}"
-    resp = requests.get(url, timeout=15)
+    resp = _http_get_with_retry(url, timeout=15)
     resp.raise_for_status()
     return resp.json()
 
@@ -434,7 +472,7 @@ def fetch_quote(ticker: str):
     """Low-level HTTP: holt detailierte Quote-Daten (/v3/quote)."""
     api_key = get_api_key()
     url = f"https://financialmodelingprep.com/api/v3/quote/{ticker}?apikey={api_key}"
-    resp = requests.get(url, timeout=15)
+    resp = _http_get_with_retry(url, timeout=15)
     resp.raise_for_status()
     return resp.json()
 

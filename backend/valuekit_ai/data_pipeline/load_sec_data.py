@@ -74,9 +74,16 @@ def load_company_data(ticker: str, years: int = 3) -> dict:
     # Step 1: Fetch SEC documents (multi-year)
     raw_docs = fetch_and_prepare_for_rag(ticker, limit=years)
 
+    if not isinstance(raw_docs, list):
+        log.error(
+            "[load_sec_data][malformed_response] ticker=%s type=%s",
+            ticker, type(raw_docs).__name__,
+        )
+        return {"status": "error", "message": f"Malformed SEC data returned for {ticker}"}
+
     if not raw_docs:
         log.warning("[load_sec_data][no_docs] ticker=%s", ticker)
-        return {"status": "error", "message": f"No documents found for {ticker}"}
+        return {"status": "error", "message": f"No SEC filings found for {ticker}"}
 
     # Derive which years were actually loaded from metadata
     loaded_years = sorted(
@@ -139,6 +146,13 @@ def load_news_data(ticker: str, max_articles: int = 10) -> dict:
 
     raw_docs = fetch_yahoo_news(ticker, max_articles=max_articles)
 
+    if not isinstance(raw_docs, list):
+        log.error(
+            "[load_sec_data][news_malformed_response] ticker=%s type=%s",
+            ticker, type(raw_docs).__name__,
+        )
+        return {"status": "error", "message": f"Malformed news data returned for {ticker}"}
+
     if not raw_docs:
         log.warning("[load_sec_data][news_no_docs] ticker=%s", ticker)
         return {"status": "error", "message": f"No news articles found for {ticker}"}
@@ -194,6 +208,13 @@ def load_yahoo_info_data(ticker: str) -> dict:
     _delete_ticker_chunks(ticker, "company_info")
 
     info = fetch_yahoo_info(ticker)
+    if not isinstance(info, dict):
+        log.error(
+            "[load_sec_data][yahoo_info_malformed] ticker=%s type=%s",
+            ticker, type(info).__name__,
+        )
+        return {"status": "error", "message": f"Malformed company info returned for {ticker}"}
+
     if not info:
         log.warning("[load_sec_data][yahoo_info_no_data] ticker=%s", ticker)
         return {"status": "error", "message": f"No company info found for {ticker}"}

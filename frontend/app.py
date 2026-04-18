@@ -1970,6 +1970,22 @@ def main():
             return {k: _secrets_to_dict(v) for k, v in obj.items()}
         return obj
 
+    # B13 — Secure/HttpOnly cookie flags:
+    # streamlit-authenticator uses the `extra_fields` cookie (via streamlit's
+    # st.experimental_set_query_params / cookies are set by the JS layer).
+    # The library does NOT expose secure= or httponly= flags in its public API
+    # as of v0.3.x.  Until upstream support is added, cookies are sent over
+    # HTTP as well as HTTPS and are accessible to JavaScript.
+    # Mitigation: deploy behind HTTPS-only reverse proxy (Railway / Nginx) and
+    # keep cookie_expiry_days short (default 1 day).
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        log.warning(
+            "[app][security] running in production (RAILWAY_ENVIRONMENT=%s) — "
+            "streamlit-authenticator does not set Secure or HttpOnly cookie flags; "
+            "ensure HTTPS-only access is enforced at the proxy/load-balancer layer",
+            os.environ["RAILWAY_ENVIRONMENT"],
+        )
+
     credentials_mutable = _secrets_to_dict(st.secrets["auth"]["credentials"])
     authenticator = stauth.Authenticate(
         credentials=credentials_mutable,

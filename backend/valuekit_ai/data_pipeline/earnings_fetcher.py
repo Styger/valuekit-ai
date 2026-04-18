@@ -88,6 +88,13 @@ class EarningsTranscriptFetcher:
                 log.warning("[earnings_fetcher][no_data] ticker=%s", ticker)
                 return []
 
+            if not isinstance(data, list):
+                log.warning(
+                    "[earnings_fetcher][malformed_response] ticker=%s type=%s body=%s",
+                    ticker, type(data).__name__, str(data)[:200],
+                )
+                return []
+
             log.info(
                 "[earnings_fetcher][fetched] ticker=%s count=%d", ticker, len(data)
             )
@@ -96,6 +103,7 @@ class EarningsTranscriptFetcher:
             return [
                 {**t, "content": _sanitize_for_prompt(t.get("content", ""))}
                 for t in data
+                if isinstance(t, dict)
             ]
 
         except requests.exceptions.RequestException as e:
@@ -205,6 +213,10 @@ def fetch_and_prepare_for_rag(
     raw_transcripts = fetcher.get_latest_transcripts(ticker, limit)
 
     if not raw_transcripts:
+        log.warning(
+            "[earnings_fetcher][no_transcripts] ticker=%s message='No earnings transcripts available for %s'",
+            ticker, ticker,
+        )
         return []
 
     documents = []
