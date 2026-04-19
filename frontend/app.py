@@ -7,6 +7,7 @@ Each mode calls the backend directly and renders its own results.
 import logging
 import re
 import sys
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -193,10 +194,10 @@ _INDEX_TYPES = {
 # Maps ChromaDB document_type → the substring that identifies matching CacheManager keys.
 # news_article has no CacheManager entry, so it maps to None.
 _DTYPE_CACHE_FRAGMENT = {
-    "10-K":          "_10K_",
+    "10-K": "_10K_",
     "earnings_call": "_earnings_",
-    "company_info":  "_yahoo_info",
-    "news_article":  None,
+    "company_info": "_yahoo_info",
+    "news_article": None,
 }
 
 
@@ -334,6 +335,7 @@ def _render_index_manager():
         # ── Count docs per type ───────────────────────────────────────────────
         try:
             from backend.valuekit_ai.rag.vector_store import get_vector_store
+
             vs = get_vector_store()
             raw_col = vs.vectorstore._collection
             counts = {}
@@ -389,6 +391,7 @@ def _render_index_manager():
         if st.button("Confirm Delete", key="idx_del_step2", type="primary"):
             try:
                 from backend.cache import get_cache_manager
+
                 cache = get_cache_manager()
 
                 for dtype in pending:
@@ -746,10 +749,10 @@ def _page_mos():
                     consensus = get_growth_consensus(ticker, years[0])
                 growth_rate = consensus["rate"]
                 _METHOD_LABELS = {
-                    "consensus":      "Historical CAGR (60%) + Analyst estimate (40%)",
-                    "own_cagr_only":  "Historical CAGR only (no analyst data available)",
-                    "analyst_only":   "Analyst estimate only (no CAGR data available)",
-                    "fallback":       "Standard fallback 10% (no data available)",
+                    "consensus": "Historical CAGR (60%) + Analyst estimate (40%)",
+                    "own_cagr_only": "Historical CAGR only (no analyst data available)",
+                    "analyst_only": "Analyst estimate only (no CAGR data available)",
+                    "fallback": "Standard fallback 10% (no data available)",
                 }
                 label = _METHOD_LABELS.get(consensus["method"], consensus["method"])
                 cap_note = "  \n⚠️ Capped at 25%." if consensus["capped"] else ""
@@ -766,7 +769,9 @@ def _page_mos():
                 )
                 log.info(
                     "[app][mos_consensus] ticker=%s rate=%.4f method=%s",
-                    ticker, growth_rate, consensus["method"],
+                    ticker,
+                    growth_rate,
+                    consensus["method"],
                 )
             except Exception as ce:
                 log.warning("[app][mos_consensus_error] ticker=%s error=%s", ticker, ce)
@@ -1191,7 +1196,12 @@ def _page_tencap():
         years = list(range(start_year, end_year + 1))
     else:
         single_year = st.number_input(
-            "Year", min_value=2000, max_value=2030, value=2024, step=1, key="tencap_single"
+            "Year",
+            min_value=2000,
+            max_value=2030,
+            value=2024,
+            step=1,
+            key="tencap_single",
         )
         years = [single_year]
 
@@ -1212,7 +1222,9 @@ def _page_tencap():
 
         log.info(
             "[app][tencap_start] ticker=%s years=%s pipeline_version=%s",
-            ticker, years, PIPELINE_VERSION,
+            ticker,
+            years,
+            PIPELINE_VERSION,
         )
 
         with st.spinner(f"Calculating TenCap for {ticker}..."):
@@ -1224,9 +1236,15 @@ def _page_tencap():
                         if data:
                             results.append(data)
                         else:
-                            log.warning("[app][tencap_year_skip] ticker=%s year=%d no_data", ticker, year)
+                            log.warning(
+                                "[app][tencap_year_skip] ticker=%s year=%d no_data",
+                                ticker,
+                                year,
+                            )
                     except Exception as ye:
-                        log.warning("[app][tencap_year_skip] year=%d error=%s", year, ye)
+                        log.warning(
+                            "[app][tencap_year_skip] year=%d error=%s", year, ye
+                        )
 
                 if not results:
                     st.error(f"No TenCap data found for {ticker}.")
@@ -1247,12 +1265,15 @@ def _page_tencap():
 
                 # ── Key metrics ───────────────────────────────────────────────
                 c1, c2, c3 = st.columns(3)
-                fair_value   = latest.get("ten_cap_fair_value")
-                buy_price    = latest.get("ten_cap_buy_price")
+                fair_value = latest.get("ten_cap_fair_value")
+                buy_price = latest.get("ten_cap_buy_price")
                 current_price = latest.get("current_stock_price")
-                c1.metric("Fair Value",    f"${fair_value:,.2f}"    if fair_value    else "N/A")
-                c2.metric("Buy Price",     f"${buy_price:,.2f}"     if buy_price     else "N/A")
-                c3.metric("Current Price", f"${current_price:,.2f}" if current_price else "N/A")
+                c1.metric("Fair Value", f"${fair_value:,.2f}" if fair_value else "N/A")
+                c2.metric("Buy Price", f"${buy_price:,.2f}" if buy_price else "N/A")
+                c3.metric(
+                    "Current Price",
+                    f"${current_price:,.2f}" if current_price else "N/A",
+                )
 
                 # ── Valuation verdict ─────────────────────────────────────────
                 comparison = latest.get("price_vs_fair_value_tencap", "N/A")
@@ -1317,10 +1338,10 @@ def _page_tencap():
                         fv = r.get("ten_cap_fair_value")
                         bp = r.get("ten_cap_buy_price")
                         row = {
-                            "Year":       r.get("year", "N/A"),
+                            "Year": r.get("year", "N/A"),
                             "Fair Value": f"${fv:,.2f}" if fv else "N/A",
-                            "Buy Price":  f"${bp:,.2f}" if bp else "N/A",
-                            "Owner EPS":  f"${r.get('earnings_per_share', 0):,.2f}",
+                            "Buy Price": f"${bp:,.2f}" if bp else "N/A",
+                            "Owner EPS": f"${r.get('earnings_per_share', 0):,.2f}",
                         }
                         table_rows.append(row)
                     # Append current price & comparison to the latest year row
@@ -1351,11 +1372,11 @@ def _get_data_quality_tier(avg_relevance: float, sources: int) -> dict:
       Low    — anything below Medium
     """
     if avg_relevance >= 0.65 and sources >= 5:
-        return {"level": "high",   "label": "High data quality",   "color": "success"}
+        return {"level": "high", "label": "High data quality", "color": "success"}
     elif avg_relevance >= 0.45 or sources >= 3:
-        return {"level": "medium", "label": "Medium data quality",  "color": "warning"}
+        return {"level": "medium", "label": "Medium data quality", "color": "warning"}
     else:
-        return {"level": "low",    "label": "Low data quality",     "color": "error"}
+        return {"level": "low", "label": "Low data quality", "color": "error"}
 
 
 def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
@@ -1370,7 +1391,7 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
         bm_result: Optional result from analyze_business_model()
     """
     # ── RAG data quality indicator ────────────────────────────────────────────
-    avg_rel   = ai.get("avg_relevance_score", 0.0)
+    avg_rel = ai.get("avg_relevance_score", 0.0)
     total_src = ai.get("total_sources_used", 0)
     tier = _get_data_quality_tier(avg_rel, total_src)
     _QUALITY_MSG = {
@@ -1407,8 +1428,8 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
 
     # ── Summary metrics ───────────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Decision",     ai.get("decision", "N/A"))
-    c2.metric("Confidence",   ai.get("confidence", "N/A"))
+    c1.metric("Decision", ai.get("decision", "N/A"))
+    c2.metric("Confidence", ai.get("confidence", "N/A"))
     c3.metric("Overall Score", f"{ai.get('overall_score', 0)}/100")
     c4.metric("Moat Strength", ai.get("moat_strength", "N/A"))
 
@@ -1421,19 +1442,18 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
         with st.expander("🔍 Moat Breakdown", expanded=False):
             _CONF_COLOR = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}
             for _key, md in moat_details.items():
-                score     = md.get("score", 0)
-                bar       = "█" * score + "░" * (10 - score)
-                conf      = md.get("confidence", "Low")
+                score = md.get("score", 0)
+                bar = "█" * score + "░" * (10 - score)
+                conf = md.get("confidence", "Low")
                 conf_icon = _CONF_COLOR.get(conf, "⚪")
-                srcs      = md.get("sources_used", 0)
+                srcs = md.get("sources_used", 0)
                 st.markdown(
                     f"**{md['name']}** — {score}/10 &nbsp; "
                     f"`{bar}` &nbsp; {conf_icon} {conf} confidence"
                     + (f"  ·  {srcs} sources" if srcs else "")
                 )
-                for ev in (md.get("evidence") or []):
+                for ev in md.get("evidence") or []:
                     st.caption(f"› {ev}")
-
 
 
 def _render_fundamentals(ticker: str, year: int):
@@ -1475,6 +1495,7 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
         result:  dict from ValueKitAnalyzer.analyze_stock_complete()
         mos_pct: margin of safety % for buy-price display (default 50%)
     """
+
     def _pct(v):
         return f"{v * 100:.1f}%" if v is not None else "N/A"
 
@@ -1499,10 +1520,10 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
         r = result["mos_result"]
         st.subheader("🛡️ Margin of Safety")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Fair Value",    f"${r.get('Fair Value Today', 0):.2f}")
-        c2.metric("MOS Price",     f"${r.get('MOS Price', 0):.2f}")
+        c1.metric("Fair Value", f"${r.get('Fair Value Today', 0):.2f}")
+        c2.metric("MOS Price", f"${r.get('MOS Price', 0):.2f}")
         c3.metric("Current Price", f"${r.get('Current Stock Price', 0):.2f}")
-        c4.metric("EPS",           f"${r.get('EPS_now', 0):.2f}")
+        c4.metric("EPS", f"${r.get('EPS_now', 0):.2f}")
         st.info(
             f"Price vs Fair Value: {r.get('Price vs Fair Value', 'N/A')} | "
             f"Growth Rate: {r.get('Growth Rate', 0):.1f}% | "
@@ -1520,7 +1541,7 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
             f"TenCap Buy Price ({mos_pct * 100:.0f}% MOS)", f"${tc_mos_price:.2f}"
         )
         c2.metric("TenCap Fair Value", f"${r.get('ten_cap_fair_value', 0):.2f}")
-        c3.metric("Current Price",     f"${r.get('current_stock_price', 0):.2f}")
+        c3.metric("Current Price", f"${r.get('current_stock_price', 0):.2f}")
         st.divider()
 
     # PBT
@@ -1531,7 +1552,7 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
         pbt_mos_price = r.get("fair_value", 0) * (1 - mos_pct)
         c1.metric(f"Buy Price ({mos_pct * 100:.0f}% MOS)", f"${pbt_mos_price:.2f}")
         c2.metric("Fair Value (2×)", f"${r.get('fair_value', 0):.2f}")
-        c3.metric("Current Price",   f"${r.get('current_stock_price', 0):.2f}")
+        c3.metric("Current Price", f"${r.get('current_stock_price', 0):.2f}")
         st.divider()
 
     # Profitability
@@ -1540,9 +1561,9 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
         if not r.get("error"):
             st.subheader("💰 Profitability")
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("ROE",        _pct(r.get("roe")))
-            c2.metric("ROA",        _pct(r.get("roa")))
-            c3.metric("ROIC",       _pct(r.get("roic")))
+            c1.metric("ROE", _pct(r.get("roe")))
+            c2.metric("ROA", _pct(r.get("roa")))
+            c3.metric("ROIC", _pct(r.get("roic")))
             c4.metric("Net Margin", _pct(r.get("net_margin")))
 
 
@@ -1616,6 +1637,7 @@ def _page_moat():
                     load_news_data as _load_news,
                     load_yahoo_info_data as _load_yahoo_info,
                 )
+
                 if load_sec:
                     _load_sec(ticker)
                 if load_news:
@@ -1623,11 +1645,14 @@ def _page_moat():
                 if load_yahoo_info:
                     info_result = _load_yahoo_info(ticker)
                     if info_result.get("status") != "success":
-                        st.warning(f"Yahoo Company Info could not be loaded: {info_result.get('message', 'unknown error')}")
+                        st.warning(
+                            f"Yahoo Company Info could not be loaded: {info_result.get('message', 'unknown error')}"
+                        )
                     else:
                         log.info(
                             "[app][yahoo_info_loaded] ticker=%s chunks=%d",
-                            ticker, info_result.get("chunks_created", 0),
+                            ticker,
+                            info_result.get("chunks_created", 0),
                         )
 
                 analyzer = ValueKitAnalyzer()
@@ -1650,10 +1675,10 @@ def _page_moat():
                     auto_estimate_growth=False,
                     discount_rate=0.15,
                     margin_of_safety=0.50,
-                    load_sec_data=False,        # already loaded above
+                    load_sec_data=False,  # already loaded above
                     load_earnings_data=load_earnings,
-                    load_news_data=False,       # already loaded above
-                    load_yahoo_info_data=False, # already loaded above
+                    load_news_data=False,  # already loaded above
+                    load_yahoo_info_data=False,  # already loaded above
                     config=config,
                     top_k=st.session_state["pipeline_top_k"],
                     temperature=st.session_state["pipeline_temperature"],
@@ -1661,6 +1686,7 @@ def _page_moat():
 
                 # Quantitative pipeline (no moat re-run; FMP data is cached)
                 from backend.valuekit_ai.config.analysis_config import quantitative_only
+
                 quant_result = analyzer.analyze_stock_complete(
                     ticker=ticker,
                     year=year,
@@ -1724,9 +1750,7 @@ def _page_overview():
     load_earnings = col4.checkbox(
         "Load Earnings Transcripts", value=False, key="ov_earn"
     )
-    load_news = col5.checkbox(
-        "Load Yahoo Finance News", value=False, key="ov_news"
-    )
+    load_news = col5.checkbox("Load Yahoo Finance News", value=False, key="ov_news")
     load_yahoo_info = col6.checkbox(
         "Load Yahoo Company Info", value=False, key="ov_yahoo_info"
     )
@@ -1762,6 +1786,7 @@ def _page_overview():
                     load_news_data as _load_news,
                     load_yahoo_info_data as _load_yahoo_info,
                 )
+
                 if load_sec:
                     _load_sec(ticker)
                 if load_news:
@@ -1769,20 +1794,25 @@ def _page_overview():
                 if load_yahoo_info:
                     info_result = _load_yahoo_info(ticker)
                     if info_result.get("status") != "success":
-                        st.warning(f"Yahoo Company Info could not be loaded: {info_result.get('message', 'unknown error')}")
+                        st.warning(
+                            f"Yahoo Company Info could not be loaded: {info_result.get('message', 'unknown error')}"
+                        )
                     else:
                         log.info(
                             "[app][yahoo_info_loaded] ticker=%s chunks=%d",
-                            ticker, info_result.get("chunks_created", 0),
+                            ticker,
+                            info_result.get("chunks_created", 0),
                         )
 
                 analyzer = ValueKitAnalyzer()
 
                 # Business Model — always attempt; returns status=error if no docs indexed
-                ov_bm_result = analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
-                    ticker,
-                    top_k=st.session_state["pipeline_top_k"],
-                    temperature=st.session_state["pipeline_temperature"],
+                ov_bm_result = (
+                    analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
+                        ticker,
+                        top_k=st.session_state["pipeline_top_k"],
+                        temperature=st.session_state["pipeline_temperature"],
+                    )
                 )
 
                 result = analyzer.analyze_stock_complete(
@@ -1791,10 +1821,10 @@ def _page_overview():
                     auto_estimate_growth=True,
                     discount_rate=discount_rate,
                     margin_of_safety=mos_pct,
-                    load_sec_data=False,       # already loaded above
+                    load_sec_data=False,  # already loaded above
                     load_earnings_data=load_earnings,
-                    load_news_data=False,      # already loaded above
-                    load_yahoo_info_data=False, # already loaded above
+                    load_news_data=False,  # already loaded above
+                    load_yahoo_info_data=False,  # already loaded above
                     config=config,
                     top_k=st.session_state["pipeline_top_k"],
                     temperature=st.session_state["pipeline_temperature"],
@@ -1817,36 +1847,41 @@ def _page_overview():
                 )
 
             except Exception as e:
-                log.error("[app][overview_error] ticker=%s error=%s", ticker_input, e, exc_info=True)
+                log.error(
+                    "[app][overview_error] ticker=%s error=%s",
+                    ticker_input,
+                    e,
+                    exc_info=True,
+                )
                 st.error(f"An error occurred during analysis: {e}")
 
     # ── Render last result (persists across reruns, e.g. from sidebar refresh) ──
     _ov = st.session_state.get("ov_result")
     if _ov:
-        result    = _ov["result"]
-        ticker    = _ov["ticker"]
-        year      = _ov["year"]
-        mos_pct   = _ov["mos_pct"]
+        result = _ov["result"]
+        ticker = _ov["ticker"]
+        year = _ov["year"]
+        mos_pct = _ov["mos_pct"]
         ov_bm_result = _ov.get("bm_result")
 
         # Growth Rate transparency (consensus source)
         gc = result.get("growth_consensus")
         if gc:
             _METHOD_LABELS_OV = {
-                "consensus":     "CAGR (60%) + Analyst (40%)",
+                "consensus": "CAGR (60%) + Analyst (40%)",
                 "own_cagr_only": "CAGR only",
-                "analyst_only":  "Analyst only",
-                "fallback":      "Fallback 10%",
+                "analyst_only": "Analyst only",
+                "fallback": "Fallback 10%",
             }
             gc_label = _METHOD_LABELS_OV.get(gc["method"], gc["method"])
             own = gc["sources"].get("own_cagr")
             ana = gc["sources"].get("analyst_estimate")
             cap_note = " (capped at 25%)" if gc["capped"] else ""
-            parts = [f"Growth rate: **{gc['rate']*100:.1f}%{cap_note}** — {gc_label}"]
+            parts = [f"Growth rate: **{gc['rate'] * 100:.1f}%{cap_note}** — {gc_label}"]
             if own is not None:
-                parts.append(f"Own CAGR: {own*100:.1f}%")
+                parts.append(f"Own CAGR: {own * 100:.1f}%")
             if ana is not None:
-                parts.append(f"Analyst: {ana*100:.1f}%")
+                parts.append(f"Analyst: {ana * 100:.1f}%")
             st.caption("  |  ".join(parts))
 
         # ── 3-Score Model ─────────────────────────────────────────────────
@@ -1891,16 +1926,16 @@ def _page_overview():
             decision = ai.get("decision", "N/A")
             _DECISION_RULES = {
                 "STRONG BUY": "Score ≥ 80",
-                "BUY":        "Score ≥ 70",
-                "HOLD":       "Score ≥ 50",
-                "PASS":       "Score < 50",
+                "BUY": "Score ≥ 70",
+                "HOLD": "Score ≥ 50",
+                "PASS": "Score < 50",
             }
             rule = _DECISION_RULES.get(decision, "—")
             rec_fn = {
                 "STRONG BUY": st.success,
-                "BUY":        st.success,
-                "HOLD":       st.warning,
-                "PASS":       st.error,
+                "BUY": st.success,
+                "HOLD": st.warning,
+                "PASS": st.error,
             }.get(decision, st.info)
             rec_fn(f"**{decision}** — {rule}")
             st.caption(f"Decision rule applied: Combined={overall} → {decision}")
@@ -1939,9 +1974,11 @@ def _apply_pepper_patch(pepper: str) -> None:
     _real_checkpw = _bcrypt_module.checkpw
 
     def _peppered_checkpw(password: bytes, hashed_password: bytes) -> bool:
-        peppered = _hmac_module.new(
-            pepper.encode(), password, _hashlib_module.sha256
-        ).hexdigest().encode()
+        peppered = (
+            _hmac_module.new(pepper.encode(), password, _hashlib_module.sha256)
+            .hexdigest()
+            .encode()
+        )
         return _real_checkpw(peppered, hashed_password)
 
     _bcrypt_module.checkpw = _peppered_checkpw
@@ -1960,7 +1997,9 @@ def main():
     if pepper:
         _apply_pepper_patch(pepper)
     else:
-        log.warning("[auth] pepper not configured in secrets.toml — falling back to bcrypt-only")
+        log.warning(
+            "[auth] pepper not configured in secrets.toml — falling back to bcrypt-only"
+        )
 
     import json
 
