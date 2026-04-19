@@ -30,23 +30,31 @@ def _http_get_with_retry(url: str, **kwargs) -> requests.Response:
             delay = _delays[attempt - 1]
             log.warning(
                 "[fmp_api][retry] attempt=%d/3 url=%s status=%d retrying_in=%ds",
-                attempt, _safe_url, resp.status_code, delay,
+                attempt,
+                _safe_url,
+                resp.status_code,
+                delay,
             )
             _time.sleep(delay)
         except requests.exceptions.RequestException as exc:
             if attempt == 3:
                 log.error(
                     "[fmp_api][retry_exhausted] attempts=3 url=%s error=%s",
-                    _safe_url, exc,
+                    _safe_url,
+                    exc,
                 )
                 raise
             delay = _delays[attempt - 1]
             log.warning(
                 "[fmp_api][retry] attempt=%d/3 url=%s error=%s retrying_in=%ds",
-                attempt, _safe_url, exc, delay,
+                attempt,
+                _safe_url,
+                exc,
+                delay,
             )
             _time.sleep(delay)
     return resp  # final 5xx response after all attempts
+
 
 from pathlib import Path
 
@@ -135,7 +143,7 @@ def get_api_key() -> str:
         raise ValueError(
             "FMP API key not configured in secrets.toml or FMP_API_KEY env var"
         )
-    log.debug("[fmp_api][get_api_key] key=%s***", key[:8])
+    log.debug("[fmp_api][get_api_key] key=%s***", key[:4])
     return key
 
 
@@ -273,6 +281,7 @@ def get_analyst_estimates(ticker: str, limit: int = 5):
     a transient 403 / plan-restriction response does not poison future calls.
     """
     import logging as _logging
+
     _log = _logging.getLogger(__name__)
 
     cache = _get_cache()
@@ -287,7 +296,8 @@ def get_analyst_estimates(ticker: str, limit: int = 5):
     if not isinstance(data, list):
         _log.warning(
             "[fmp_api][analyst_estimates_skip_cache] ticker=%s reason=non_list response=%s",
-            ticker, str(data)[:200],
+            ticker,
+            str(data)[:200],
         )
         return []
 
@@ -304,9 +314,12 @@ def _fetch_analyst_estimates_uncached(ticker: str, limit: int):
     resp = _http_get_with_retry(url, timeout=10)
     if resp.status_code != 200:
         import logging as _logging
+
         _logging.getLogger(__name__).warning(
             "[fmp_api][analyst_estimates_http_error] ticker=%s status=%d body=%s",
-            ticker, resp.status_code, resp.text[:200],
+            ticker,
+            resp.status_code,
+            resp.text[:200],
         )
         return []
     return resp.json()
