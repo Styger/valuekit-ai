@@ -13,24 +13,9 @@ root_dir = Path(__file__).resolve().parent.parent.parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
+from backend.valuekit_ai.utils.sanitize import _sanitize_for_prompt
+
 log = logging.getLogger(__name__)
-
-
-def _sanitize_for_prompt(text: str) -> str:
-    """Redact prompt injection attempts from untrusted news text."""
-    patterns = [
-        r"ignore previous instructions",
-        r"system:",
-        r"you are now",
-        r"new instructions:",
-    ]
-    for pattern in patterns:
-        if _re.search(pattern, text, _re.IGNORECASE):
-            log.warning(
-                "[yahoo_news_fetcher][prompt_injection_redacted] pattern='%s'", pattern
-            )
-            text = _re.sub(pattern, "[REDACTED]", text, flags=_re.IGNORECASE)
-    return text
 
 
 def fetch_yahoo_news(ticker: str, max_articles: int = 10) -> List[Dict]:

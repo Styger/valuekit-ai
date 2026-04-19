@@ -10,7 +10,11 @@
       "Bash(ls:*)",
       "Bash(find \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/core\" -name \"*.pyc\" -delete && echo \"done\")",
       "Bash(find \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend\" -name \"*.pyc\" -delete && echo \"cleared\")",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Bash(sed -n '19,45p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/yahoo_news_fetcher.py\")",
+      "Bash(sed -n '23,40p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/earnings_fetcher.py\")",
+      "Bash(sed -n '26,45p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/sec_fetcher.py\")",
+      "Bash(sed -n '28,47p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/yahoo_info_fetcher.py\")"
     ]
   }
 }

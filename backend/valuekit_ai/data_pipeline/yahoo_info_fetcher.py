@@ -17,29 +17,13 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from backend.cache import get_cache_manager
+from backend.valuekit_ai.utils.sanitize import _sanitize_for_prompt
 
 log = logging.getLogger(__name__)
 
 _TICKER_RE = _re.compile(r"^[A-Z]{1,5}$")
 
 _FMP_BASE = "https://financialmodelingprep.com/api/v3"
-
-
-def _sanitize_for_prompt(text: str) -> str:
-    """Redact prompt injection attempts from untrusted text."""
-    patterns = [
-        r"ignore previous instructions",
-        r"system:",
-        r"you are now",
-        r"new instructions:",
-    ]
-    for pattern in patterns:
-        if _re.search(pattern, text, _re.IGNORECASE):
-            log.warning(
-                "[yahoo_info_fetcher][prompt_injection_redacted] pattern='%s'", pattern
-            )
-            text = _re.sub(pattern, "[REDACTED]", text, flags=_re.IGNORECASE)
-    return text
 
 
 def fetch_yahoo_info(ticker: str) -> Dict:

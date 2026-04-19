@@ -16,25 +16,9 @@ if str(root_dir) not in sys.path:
 
 from backend.api.fmp_api import get_api_key
 from backend.cache import get_cache_manager
+from backend.valuekit_ai.utils.sanitize import _sanitize_for_prompt
 
 log = logging.getLogger(__name__)
-
-
-def _sanitize_for_prompt(text: str) -> str:
-    """Redact prompt injection attempts from untrusted document text."""
-    patterns = [
-        r"ignore previous instructions",
-        r"system:",
-        r"you are now",
-        r"new instructions:",
-    ]
-    for pattern in patterns:
-        if _re.search(pattern, text, _re.IGNORECASE):
-            log.warning(
-                "[earnings_fetcher][prompt_injection_redacted] pattern='%s'", pattern
-            )
-            text = _re.sub(pattern, "[REDACTED]", text, flags=_re.IGNORECASE)
-    return text
 
 
 class EarningsTranscriptFetcher:
