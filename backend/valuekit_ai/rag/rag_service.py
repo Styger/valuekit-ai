@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from anthropic import Anthropic
+import litellm
 from langchain_core.documents import Document
 
 root_dir = Path(__file__).resolve().parent.parent.parent.parent
@@ -16,8 +16,12 @@ if str(root_dir) not in sys.path:
 
 from backend.valuekit_ai.config.config import RAGConfig, PIPELINE_VERSION
 from backend.valuekit_ai.rag.vector_store import get_vector_store
+from backend.valuekit_ai.utils.sanitize import wrap_document_for_prompt
 
 log = logging.getLogger(__name__)
+
+# Enforce monthly spend cap across all litellm calls in this process.
+litellm.max_budget = RAGConfig.MONTHLY_BUDGET_USD
 
 
 class RAGService:
@@ -25,7 +29,6 @@ class RAGService:
 
     def __init__(self):
         self.config = RAGConfig()
-        self.client = Anthropic(api_key=self.config.ANTHROPIC_API_KEY)
         self.vector_store = get_vector_store()
         log.info(
             "[rag_service][init] model=%s pipeline_version=%s",
@@ -62,14 +65,25 @@ class RAGService:
             return {"status": "error", "error": str(e)}
 
     def _format_context(self, documents: List[Document]) -> str:
-        """Format retrieved documents into context string"""
+        """Format retrieved documents into context string.
+
+        Each chunk is sanitized and wrapped via wrap_document_for_prompt so that
+        injection attempts embedded in SEC filings, earnings transcripts, or news
+        are redacted before the text reaches the LLM prompt.
+        """
         parts = []
         for i, doc in enumerate(documents, 1):
             meta = doc.metadata
+            source_label = (
+                f"{meta.get('ticker', 'unknown')}_"
+                f"{meta.get('document_type', 'doc')}_"
+                f"{i}"
+            )
             parts.append(
                 f"Document {i}:\n"
-                f"Source: {meta.get('document_type', 'Unknown')} - {meta.get('company', meta.get('ticker', 'Unknown'))}\n"
-                f"Content: {doc.page_content}\n"
+                f"Source: {meta.get('document_type', 'Unknown')} - "
+                f"{meta.get('company', meta.get('ticker', 'Unknown'))}\n"
+                + wrap_document_for_prompt(doc.page_content, source_label=source_label)
             )
         return "\n---\n".join(parts)
 
@@ -135,11 +149,12 @@ class RAGService:
         prompt = self._build_analysis_prompt(query, context, quantitative_data, scoring_rules)
 
         try:
-            message = self.client.messages.create(
+            response = litellm.completion(
                 model=self.config.LLM_MODEL,
+                messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
                 temperature=_temperature,
-                messages=[{"role": "user", "content": prompt}],
+                api_key=self.config.LLM_API_KEY,
             )
 
             log.info(
@@ -151,7 +166,7 @@ class RAGService:
 
             return {
                 "status": "success",
-                "analysis": message.content[0].text,
+                "analysis": response.choices[0].message.content,
                 "sources": [
                     {
                         "content": doc.page_content[:200] + "...",

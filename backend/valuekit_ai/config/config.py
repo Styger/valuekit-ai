@@ -50,6 +50,44 @@ class RAGConfig:
 
         return None
 
+    @staticmethod
+    def _load_numeric(key_path: list, env_var: str, default, cast):
+        """Load a numeric value from secrets.toml or environment variable.
+
+        Falls back to `default` if neither source provides a parseable value.
+        `cast` is the type constructor (float or int).
+        """
+        # First try environment variable
+        env_value = os.getenv(env_var)
+        if env_value:
+            try:
+                return cast(env_value)
+            except (ValueError, TypeError):
+                print(f"Warning: Could not parse {env_var}={env_value!r} as {cast.__name__}, using default {default}")
+
+        # Then try secrets.toml
+        try:
+            possible_paths = [
+                Path(".streamlit/secrets.toml"),
+                Path("../.streamlit/secrets.toml"),
+                Path("../../.streamlit/secrets.toml"),
+            ]
+            for secrets_path in possible_paths:
+                if secrets_path.exists():
+                    secrets = toml.load(secrets_path)
+                    value = secrets
+                    for key in key_path:
+                        value = value.get(key, {})
+                    if isinstance(value, (int, float, str)):
+                        try:
+                            return cast(value)
+                        except (ValueError, TypeError):
+                            print(f"Warning: Could not parse secrets.toml {key_path}={value!r} as {cast.__name__}, using default {default}")
+        except Exception as e:
+            print(f"Warning: Could not load from secrets.toml: {e}")
+
+        return default
+
     # API Keys
     ANTHROPIC_API_KEY = _load_secret.__func__(
         ["anthropic", "api_key"], "ANTHROPIC_API_KEY"
@@ -69,21 +107,51 @@ class RAGConfig:
 
     # Model Settings
     EMBEDDING_MODEL = "voyage-finance-2"  # Spezialisiert auf Financial Data
-    LLM_MODEL = "claude-sonnet-4-6"
+
+    # LLM model in LiteLLM provider/model format.
+    # Override via secrets.toml [llm] model or LLM_MODEL env var.
+    # Examples:
+    #   "anthropic/claude-sonnet-4-6"  (default)
+    #   "openai/gpt-4o"
+    LLM_MODEL = (
+        _load_secret.__func__(["llm", "model"], "LLM_MODEL")
+        or "anthropic/claude-sonnet-4-6"
+    )
+
     LLM_TEMPERATURE = 0.0  # Für präzise quantitative Analysen
+
+    # Monthly spend cap enforced by LiteLLM (USD).
+    # Override via secrets.toml [llm] monthly_budget_usd or LLM_MONTHLY_BUDGET_USD env var.
+    MONTHLY_BUDGET_USD = _load_numeric.__func__(
+        ["llm", "monthly_budget_usd"], "LLM_MONTHLY_BUDGET_USD", 50.0, float
+    )
+
+    # LLM API key — loaded from [llm][api_key] / LLM_API_KEY first, then falls
+    # back to the provider-specific key derived from the LLM_MODEL prefix.
+    LLM_API_KEY = _load_secret.__func__(["llm", "api_key"], "LLM_API_KEY") or (
+        _load_secret.__func__(["anthropic", "api_key"], "ANTHROPIC_API_KEY")
+        if LLM_MODEL.startswith("anthropic/")
+        else os.getenv("OPENAI_API_KEY")
+    )
 
     # Retrieval Settings
     TOP_K_RESULTS = 8  # Anzahl relevanter Chunks für Context
 
     # Generation Settings
-    LLM_MAX_TOKENS = 4096
+    # Override via secrets.toml [llm] max_tokens or LLM_MAX_TOKENS env var.
+    LLM_MAX_TOKENS = _load_numeric.__func__(
+        ["llm", "max_tokens"], "LLM_MAX_TOKENS", 4096, int
+    )
 
     @classmethod
     def validate(cls):
         """Validate that required API keys are present"""
         errors = []
-        if not cls.ANTHROPIC_API_KEY:
-            errors.append("ANTHROPIC_API_KEY not found in secrets.toml or environment")
+        if not cls.LLM_API_KEY:
+            errors.append(
+                "LLM_API_KEY not found — add [llm] api_key to secrets.toml "
+                "or set LLM_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY env var"
+            )
         if not cls.VOYAGE_API_KEY:
             errors.append("VOYAGE_API_KEY not found in secrets.toml or environment")
 
