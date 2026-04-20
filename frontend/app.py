@@ -154,10 +154,6 @@ def _init_session_state():
         st.session_state["analysis_count"] = 0
     if "ov_result" not in st.session_state:
         st.session_state["ov_result"] = None
-    if "pipeline_top_k" not in st.session_state:
-        st.session_state["pipeline_top_k"] = RAGConfig.TOP_K_RESULTS
-    if "pipeline_temperature" not in st.session_state:
-        st.session_state["pipeline_temperature"] = RAGConfig.LLM_TEMPERATURE
 
 
 def _check_session_limit():
@@ -244,59 +240,39 @@ def _render_pipeline_config():
     with st.sidebar.expander("⚙️ Pipeline Configuration", expanded=False):
         # ── RAG / Retrieval ───────────────────────────────────────────────────
         st.markdown("**RAG / Retrieval**")
-        _df_rag = pd.DataFrame(
+        _df_rag_full = pd.DataFrame(
             {
-                "Parameter": ["Embedding model", "Chunk size", "Chunk overlap"],
+                "Parameter": [
+                    "Embedding model",
+                    "Chunk size",
+                    "Chunk overlap",
+                    "Top-k chunks",
+                ],
                 "Value": [
                     RAGConfig.EMBEDDING_MODEL,
                     RAGConfig.CHUNK_SIZE,
                     RAGConfig.CHUNK_OVERLAP,
+                    RAGConfig.TOP_K_RESULTS,
                 ],
             }
         )
-        _df_rag["Value"] = _df_rag["Value"].astype(str)
-        st.table(_df_rag)
-        top_k_val = st.number_input(
-            "Top-k chunks",
-            min_value=1,
-            max_value=20,
-            step=1,
-            value=st.session_state["pipeline_top_k"],
-            key="pipeline_top_k_input",
-        )
-        if top_k_val != st.session_state["pipeline_top_k"]:
-            log.info(
-                "[pipeline_config][override] param=top_k value=%d default=%d",
-                top_k_val,
-                RAGConfig.TOP_K_RESULTS,
-            )
-            st.session_state["pipeline_top_k"] = top_k_val
+        _df_rag_full["Value"] = _df_rag_full["Value"].astype(str)
+        st.table(_df_rag_full)
 
         # ── LLM ──────────────────────────────────────────────────────────────
         st.markdown("**LLM**")
         _df_llm = pd.DataFrame(
             {
-                "Parameter": ["Model", "Max tokens"],
-                "Value": [RAGConfig.LLM_MODEL, RAGConfig.LLM_MAX_TOKENS],
+                "Parameter": ["Model", "Max tokens", "Temperature"],
+                "Value": [
+                    RAGConfig.LLM_MODEL,
+                    RAGConfig.LLM_MAX_TOKENS,
+                    RAGConfig.LLM_TEMPERATURE,
+                ],
             }
         )
         _df_llm["Value"] = _df_llm["Value"].astype(str)
         st.table(_df_llm)
-        temperature_val = st.slider(
-            "Temperature",
-            min_value=0.0,
-            max_value=1.0,
-            step=0.1,
-            value=float(st.session_state["pipeline_temperature"]),
-            key="pipeline_temperature_input",
-        )
-        if temperature_val != st.session_state["pipeline_temperature"]:
-            log.info(
-                "[pipeline_config][override] param=temperature value=%.1f default=%.1f",
-                temperature_val,
-                RAGConfig.LLM_TEMPERATURE,
-            )
-            st.session_state["pipeline_temperature"] = temperature_val
 
         # ── Pipeline ─────────────────────────────────────────────────────────
         st.markdown("**Pipeline**")
@@ -314,8 +290,8 @@ def _render_pipeline_config():
         _df_val = pd.DataFrame(
             {
                 "Parameter": [
-                    "Default discount rate",
-                    "Default MOS",
+                    "Discount rate",
+                    "Margin of Safety",
                     "Default base year",
                 ],
                 "Value": [
@@ -1441,19 +1417,23 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
     if moat_details:
         with st.expander("🔍 Moat Breakdown", expanded=False):
             _CONF_COLOR = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}
-            for _key, md in moat_details.items():
-                score = md.get("score", 0)
-                bar = "█" * score + "░" * (10 - score)
-                conf = md.get("confidence", "Low")
-                conf_icon = _CONF_COLOR.get(conf, "⚪")
-                srcs = md.get("sources_used", 0)
-                st.markdown(
-                    f"**{md['name']}** — {score}/10 &nbsp; "
-                    f"`{bar}` &nbsp; {conf_icon} {conf} confidence"
-                    + (f"  ·  {srcs} sources" if srcs else "")
-                )
-                for ev in md.get("evidence") or []:
-                    st.caption(f"› {ev}")
+            for _i, (_key, md) in enumerate(moat_details.items()):
+                if _i > 0:
+                    st.divider()
+                with st.container(border=True):
+                    score = md.get("score", 0)
+                    bar = "█" * score + "░" * (10 - score)
+                    conf = md.get("confidence", "Low")
+                    conf_icon = _CONF_COLOR.get(conf, "⚪")
+                    srcs = md.get("sources_used", 0)
+                    st.subheader(md["name"])
+                    st.markdown(
+                        f"{score}/10 &nbsp; "
+                        f"`{bar}` &nbsp; {conf_icon} {conf} confidence"
+                        + (f"  ·  {srcs} sources" if srcs else "")
+                    )
+                    for ev in md.get("evidence") or []:
+                        st.caption(f"› {ev}")
 
 
 def _render_fundamentals(ticker: str, year: int):
@@ -1663,8 +1643,8 @@ def _page_moat():
                     bm_result = (
                         analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
                             ticker,
-                            top_k=st.session_state["pipeline_top_k"],
-                            temperature=st.session_state["pipeline_temperature"],
+                            top_k=RAGConfig.TOP_K_RESULTS,
+                            temperature=RAGConfig.LLM_TEMPERATURE,
                         )
                     )
 
@@ -1680,8 +1660,8 @@ def _page_moat():
                     load_news_data=False,  # already loaded above
                     load_yahoo_info_data=False,  # already loaded above
                     config=config,
-                    top_k=st.session_state["pipeline_top_k"],
-                    temperature=st.session_state["pipeline_temperature"],
+                    top_k=RAGConfig.TOP_K_RESULTS,
+                    temperature=RAGConfig.LLM_TEMPERATURE,
                 )
 
                 # Quantitative pipeline (no moat re-run; FMP data is cached)
@@ -1733,17 +1713,13 @@ def _page_overview():
         "Runs all components: CAGR → MOS → TenCap → PBT → Profitability → AI Moat."
     )
 
-    col1, col2 = st.columns(2)
+    col1, _ = st.columns(2)
     with col1:
         ticker_input = _ticker_input("ov_ticker")
         year = _year_input("ov_year")
-    with col2:
-        discount_rate = (
-            st.slider("Discount Rate (%)", 5, 20, 15, step=1, key="ov_dr") / 100
-        )
-        mos_pct = (
-            st.slider("Margin of Safety (%)", 10, 60, 50, step=5, key="ov_mos") / 100
-        )
+
+    discount_rate = DEFAULT_DISCOUNT_RATE
+    mos_pct = DEFAULT_MARGIN_OF_SAFETY
 
     col3, col4, col5, col6 = st.columns(4)
     load_sec = col3.checkbox("Load SEC Filings", value=False, key="ov_sec")
@@ -1810,8 +1786,8 @@ def _page_overview():
                 ov_bm_result = (
                     analyzer.ai_analyzer.moat_analyzer.analyze_business_model(
                         ticker,
-                        top_k=st.session_state["pipeline_top_k"],
-                        temperature=st.session_state["pipeline_temperature"],
+                        top_k=RAGConfig.TOP_K_RESULTS,
+                        temperature=RAGConfig.LLM_TEMPERATURE,
                     )
                 )
 
@@ -1826,8 +1802,8 @@ def _page_overview():
                     load_news_data=False,  # already loaded above
                     load_yahoo_info_data=False,  # already loaded above
                     config=config,
-                    top_k=st.session_state["pipeline_top_k"],
-                    temperature=st.session_state["pipeline_temperature"],
+                    top_k=RAGConfig.TOP_K_RESULTS,
+                    temperature=RAGConfig.LLM_TEMPERATURE,
                 )
 
                 st.session_state["analysis_count"] += 1
