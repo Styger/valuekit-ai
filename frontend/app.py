@@ -1432,6 +1432,10 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
                         f"`{bar}` &nbsp; {conf_icon} {conf} confidence"
                         + (f"  ·  {srcs} sources" if srcs else "")
                     )
+                    st.caption(f"Evidence: {md.get('evidence_level')} → {md.get('evidence_score')}/10")
+                    st.caption(f"Confidence: {md.get('confidence')} ({md.get('sources_used')} sources) → ceiling {md.get('confidence_ceiling')}/10")
+                    st.caption(f"Diversity: {md.get('diversity_level')} → ceiling {md.get('diversity_ceiling')}/10")
+                    st.caption(f"Final: min({md.get('evidence_score')}, {md.get('confidence_ceiling')}, {md.get('diversity_ceiling')}) = {md.get('score')}/10")
                     for ev in md.get("evidence") or []:
                         st.caption(f"› {ev}")
 

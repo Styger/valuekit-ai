@@ -136,6 +136,11 @@ class MoatScore:
     confidence: str  # "High", "Medium", "Low"
     sources_used: int = 0
     avg_relevance: float = 0.0
+    evidence_level: str = "N/A"
+    evidence_score: int = 0
+    confidence_ceiling: int = 10
+    diversity_level: str = "N/A"
+    diversity_ceiling: int = 10
 
 
 @dataclass
@@ -505,6 +510,11 @@ class MoatAnalyzer:
             confidence=confidence,
             sources_used=source_count,
             avg_relevance=avg_relevance,
+            evidence_level=evidence_level,
+            evidence_score=evidence_score,
+            confidence_ceiling=ceiling,
+            diversity_level=diversity_level,
+            diversity_ceiling=diversity_ceiling,
         )
 
     def _extract_evidence(self, analysis_text: str, indicators: List[str]) -> List[str]:

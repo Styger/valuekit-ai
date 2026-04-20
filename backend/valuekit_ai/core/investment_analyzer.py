@@ -64,6 +64,11 @@ class InvestmentDecision:
                     "confidence": ms.confidence,
                     "sources_used": ms.sources_used,
                     "evidence": ms.evidence,
+                    "evidence_level": ms.evidence_level,
+                    "evidence_score": ms.evidence_score,
+                    "confidence_ceiling": ms.confidence_ceiling,
+                    "diversity_level": ms.diversity_level,
+                    "diversity_ceiling": ms.diversity_ceiling,
                 }
                 for key, ms in self.moat_analysis.moats.items()
             },
