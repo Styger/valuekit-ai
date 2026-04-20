@@ -1479,22 +1479,6 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
     def _pct(v):
         return f"{v * 100:.1f}%" if v is not None else "N/A"
 
-    # Quality + Valuation scores (from ai_decision, populated even without moat)
-    ai = result.get("ai_decision") or {}
-    if ai:
-        sc1, sc2 = st.columns(2)
-        sc1.metric(
-            "Robustness Score (40%)",
-            f"{ai.get('robustness_score', 0)} / 100",
-            help="ROIC · FCF Yield · Net Margin · CAGR",
-        )
-        sc2.metric(
-            "Valuation Score (20%)",
-            f"{ai.get('valuation_score', 0)} / 100",
-            help="MOS · TenCap · PBT — price vs fair value",
-        )
-        st.divider()
-
     # MOS
     if result.get("mos_result"):
         r = result["mos_result"]
