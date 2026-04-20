@@ -8,7 +8,7 @@ PIPELINE_VERSION = "1.0.1"
 # Valuation defaults (used by app.py and displayed in Pipeline Configuration)
 DEFAULT_DISCOUNT_RATE = 0.15   # 15%
 DEFAULT_MARGIN_OF_SAFETY = 0.50  # 50%
-DEFAULT_BASE_YEAR = 2024
+DEFAULT_BASE_YEAR = 2025
 
 root_dir = Path(__file__).resolve().parent.parent.parent
 if str(root_dir) not in sys.path:
