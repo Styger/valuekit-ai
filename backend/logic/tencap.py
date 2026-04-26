@@ -61,12 +61,9 @@ def _calculate_owner_earnings(
         )
 
     owner_earnings = (
-        profit_before_tax
-        + depreciation
-        + working_capital_change  # Already contains all Working Capital changes with correct signs
-        - adjusted_maintenance
+        profit_before_tax + depreciation + working_capital_change - adjusted_maintenance
     )
-
+    # Already contains all Working Capital changes with correct signs
     return owner_earnings
 
 
