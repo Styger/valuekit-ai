@@ -1488,11 +1488,10 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
     if result.get("mos_result"):
         r = result["mos_result"]
         st.subheader("🛡️ Margin of Safety")
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3 = st.columns(3)
         c1.metric("Fair Value", f"${r.get('Fair Value Today', 0):.2f}")
         c2.metric("MOS Price", f"${r.get('MOS Price', 0):.2f}")
         c3.metric("Current Price", f"${r.get('Current Stock Price', 0):.2f}")
-        c4.metric("EPS", f"${r.get('EPS_now', 0):.2f}")
         st.info(
             f"Price vs Fair Value: {r.get('Price vs Fair Value', 'N/A')} | "
             f"Growth Rate: {r.get('Growth Rate', 0):.1f}% | "
