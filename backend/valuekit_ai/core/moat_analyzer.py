@@ -32,9 +32,7 @@ log = logging.getLogger(__name__)
 _MOAT_SCORING_INSTRUCTION = (
     "Assess the evidence for this specific moat type using the following two-step process:\n"
     "\n"
-    "Step 1 — Evidence classification: Based solely on the retrieved documents, "
-    "classify the strength of evidence as EXACTLY ONE of the following labels "
-    "and output it on its own line in this exact format:\n"
+    "Step 1 — Output EXACTLY ONE of the following labels on its own line:\n"
     "  EVIDENCE_LEVEL: NONE      — no relevant evidence found in the documents\n"
     "  EVIDENCE_LEVEL: LIMITED   — indirect mentions or weak signals only\n"
     "  EVIDENCE_LEVEL: MODERATE  — clear but non-quantified evidence of the moat mechanism\n"
@@ -49,9 +47,10 @@ _MOAT_SCORING_INSTRUCTION = (
     "  • insufficient information\n"
     "  • does not contain\n"
     "\n"
-    "Step 2 — Qualitative analysis: Describe the evidence (or lack thereof) found "
-    "in the retrieved documents. Do NOT output a numeric score — the numeric score "
-    "is computed from EVIDENCE_LEVEL by the system."
+    "Step 2 — Write 2-4 plain sentences describing the evidence found in the retrieved documents. "
+    "Do NOT use markdown formatting, headers, bullet points, or section titles. "
+    "Write only continuous prose. "
+    "Do NOT output a numeric score — the numeric score is computed from EVIDENCE_LEVEL by the system."
 )
 
 # Upper bound of each evidence-level score range.
