@@ -1437,8 +1437,12 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
                     st.caption(f"Diversity: {md.get('diversity_level')} → ceiling {md.get('diversity_ceiling')}/10")
                     st.caption(f"Final: min({md.get('evidence_score')}, {md.get('confidence_ceiling')}, {md.get('diversity_ceiling')}) = {md.get('score')}/10")
                     for ev in md.get("evidence") or []:
-                        if not ev.strip().startswith("#"):
-                            st.caption(f"› {ev}")
+                        _ev = ev.strip()
+                        if _ev.startswith("#"):
+                            continue
+                        if re.match(r'^[A-Z][A-Za-z ]+\s[—–]\s[A-Z][A-Za-z ]+$', _ev):
+                            continue
+                        st.caption(f"› {_ev}")
 
 
 def _render_fundamentals(ticker: str, year: int):
