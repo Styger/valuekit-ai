@@ -1436,6 +1436,13 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
                     st.caption(f"Confidence: {md.get('confidence')} ({md.get('sources_used')} sources) → ceiling {md.get('confidence_ceiling')}/10")
                     st.caption(f"Diversity: {md.get('diversity_level')} → ceiling {md.get('diversity_ceiling')}/10")
                     st.caption(f"Final: min({md.get('evidence_score')}, {md.get('confidence_ceiling')}, {md.get('diversity_ceiling')}) = {md.get('score')}/10")
+                    _EV_TITLE_PREFIXES = (
+                        "Evidence Classification",
+                        "Evidence Assessment",
+                        "Qualitative Analysis",
+                        "Identified Mechanisms",
+                        "EVIDENCE_LEVEL",
+                    )
                     for ev in md.get("evidence") or []:
                         _ev = ev.strip()
                         if _ev.startswith("#"):
@@ -1443,6 +1450,8 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
                         if _ev.startswith("**"):
                             continue
                         if re.match(r'^[A-Z][A-Za-z ]+\s[—–]\s[A-Z][A-Za-z ]+$', _ev):
+                            continue
+                        if _ev.startswith(_EV_TITLE_PREFIXES):
                             continue
                         st.caption(f"› {_ev}")
 
