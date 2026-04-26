@@ -1440,6 +1440,8 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
                         _ev = ev.strip()
                         if _ev.startswith("#"):
                             continue
+                        if _ev.startswith("**"):
+                            continue
                         if re.match(r'^[A-Z][A-Za-z ]+\s[—–]\s[A-Z][A-Za-z ]+$', _ev):
                             continue
                         st.caption(f"› {_ev}")
