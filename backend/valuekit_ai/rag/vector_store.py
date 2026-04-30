@@ -165,6 +165,17 @@ class VectorStore:
         collection = self.vectorstore._collection
         return {"name": collection.name, "count": collection.count()}
 
+    def get_tickers_in_index(self) -> List[str]:
+        """Return sorted list of unique ticker symbols present in ChromaDB metadata."""
+        collection = self.vectorstore._collection
+        result = collection.get(include=["metadatas"])
+        tickers = {
+            m.get("ticker")
+            for m in result["metadatas"]
+            if m.get("ticker")
+        }
+        return sorted(tickers)
+
 
 def get_vector_store() -> VectorStore:
     """Factory function"""

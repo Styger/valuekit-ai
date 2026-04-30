@@ -308,7 +308,7 @@ def _render_pipeline_config():
 def _render_index_manager():
     """Sidebar expander to inspect and selectively delete ChromaDB index entries."""
     with st.sidebar.expander("🗄️ Manage Index", expanded=False):
-        # ── Count docs per type ───────────────────────────────────────────────
+        # ── Count docs per type + fetch live tickers ──────────────────────────
         try:
             from backend.valuekit_ai.rag.vector_store import get_vector_store
 
@@ -319,6 +319,7 @@ def _render_index_manager():
                 result = raw_col.get(where={"document_type": dtype}, include=[])
                 counts[dtype] = len(result["ids"])
             total = sum(counts.values())
+            all_tickers = vs.get_tickers_in_index()
         except Exception as e:
             st.error(f"Could not read index: {e}")
             return
@@ -350,19 +351,31 @@ def _render_index_manager():
         if not selected_types:
             return
 
+        st.markdown("**Select tickers (none = all):**")
+        selected_tickers = []
+        for ticker in all_tickers:
+            if st.checkbox(ticker, value=False, key=f"idx_del_ticker_{ticker}"):
+                selected_tickers.append(ticker)
+
         # ── Step 1: first button ──────────────────────────────────────────────
         if st.button("Delete Selected", key="idx_del_step1", type="secondary"):
-            st.session_state["idx_pending_delete"] = selected_types
+            st.session_state["idx_pending_delete"] = {
+                "types": selected_types,
+                "tickers": selected_tickers,
+            }
 
-        pending = st.session_state.get("idx_pending_delete", [])
+        pending = st.session_state.get("idx_pending_delete", {})
         if not pending:
             return
 
+        pending_types = pending["types"]
+        pending_tickers = pending["tickers"]
+
         # ── Step 2: confirm ───────────────────────────────────────────────────
-        labels = [_INDEX_TYPES[t] for t in pending]
+        labels = [_INDEX_TYPES[t] for t in pending_types]
+        ticker_note = f" for {', '.join(pending_tickers)}" if pending_tickers else " for all tickers"
         st.warning(
-            f"Delete **{sum(counts[t] for t in pending)} chunks** "
-            f"from: {', '.join(labels)}?\n\nThis cannot be undone."
+            f"Delete chunks from: {', '.join(labels)}{ticker_note}?\n\nThis cannot be undone."
         )
         if st.button("Confirm Delete", key="idx_del_step2", type="primary"):
             try:
@@ -370,21 +383,28 @@ def _render_index_manager():
 
                 cache = get_cache_manager()
 
-                for dtype in pending:
-                    n = counts[dtype]
+                for dtype in pending_types:
+                    if pending_tickers:
+                        where_filter = {
+                            "$and": [
+                                {"document_type": dtype},
+                                {"ticker": {"$in": pending_tickers}},
+                            ]
+                        }
+                    else:
+                        where_filter = {"document_type": dtype}
 
-                    # Collect affected tickers before deletion so we can target
-                    # only their cache entries — do not touch unrelated tickers.
                     meta_result = raw_col.get(
-                        where={"document_type": dtype}, include=["metadatas"]
+                        where=where_filter, include=["metadatas"]
                     )
                     affected_tickers = {
                         m.get("ticker")
                         for m in meta_result["metadatas"]
                         if m.get("ticker")
                     }
+                    n = len(meta_result["ids"])
 
-                    raw_col.delete(where={"document_type": dtype})
+                    raw_col.delete(where=where_filter)
                     log.info(
                         "[index_manager][delete] document_type=%s count=%d tickers=%s",
                         dtype,
@@ -394,7 +414,8 @@ def _render_index_manager():
 
                     _invalidate_ticker_cache(affected_tickers, dtype, cache)
 
-                st.success("Deleted. Refresh the page to see updated counts.")
+                st.success("Deleted.")
+                st.rerun()
             except Exception as e:
                 log.error("[index_manager][delete_error] error=%s", e)
                 st.error(f"Deletion failed: {e}")
