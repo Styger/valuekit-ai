@@ -154,6 +154,8 @@ def _init_session_state():
         st.session_state["analysis_count"] = 0
     if "ov_result" not in st.session_state:
         st.session_state["ov_result"] = None
+    if "moat_result" not in st.session_state:
+        st.session_state["moat_result"] = None
 
 
 def _check_session_limit():
@@ -1723,14 +1725,13 @@ def _page_moat():
                     return
 
                 st.session_state["analysis_count"] += 1
-
-                st.subheader(f"Moat Results — {ticker} ({year})")
-                _render_moat_results(ticker, year, ai, bm_result=bm_result)
-                _render_fundamentals(ticker, year)
-
-                with st.expander("📊 Full Pipeline Overview", expanded=False):
-                    _render_quant_pipeline(quant_result, mos_pct=0.50)
-
+                st.session_state["moat_result"] = {
+                    "ai": ai,
+                    "bm_result": bm_result,
+                    "quant_result": quant_result,
+                    "ticker": ticker,
+                    "year": year,
+                }
                 _refresh_index_session_state()
                 log.info(
                     "[app][moat_complete] ticker=%s decision=%s score=%s",
@@ -1738,10 +1739,20 @@ def _page_moat():
                     ai.get("decision"),
                     ai.get("overall_score"),
                 )
+                st.rerun()
 
             except Exception as e:
                 log.error("[app][moat_error] ticker=%s error=%s", ticker_input, e)
                 st.error("An error occurred during moat analysis. Please try again.")
+
+    # ── Render last result (persists across reruns) ───────────────────────────
+    _moat = st.session_state.get("moat_result")
+    if _moat:
+        st.subheader(f"Moat Results — {_moat['ticker']} ({_moat['year']})")
+        _render_moat_results(_moat["ticker"], _moat["year"], _moat["ai"], bm_result=_moat["bm_result"])
+        _render_fundamentals(_moat["ticker"], _moat["year"])
+        with st.expander("📊 Full Pipeline Overview", expanded=False):
+            _render_quant_pipeline(_moat["quant_result"], mos_pct=0.50)
 
 
 # ─── Overview Page ────────────────────────────────────────────────────────────
@@ -1862,6 +1873,7 @@ def _page_overview():
                     ticker,
                     result.get("final_recommendation", "N/A"),
                 )
+                st.rerun()
 
             except Exception as e:
                 log.error(
