@@ -235,6 +235,28 @@ def _invalidate_ticker_cache(tickers: set, dtype: str, cache) -> None:
             )
 
 
+def _refresh_index_session_state() -> None:
+    """Refresh idx_counts and idx_tickers in session_state from ChromaDB.
+
+    Call this after any analysis that may have loaded new documents so the
+    Manage Index sidebar reflects the current state on the next render.
+    """
+    try:
+        from backend.valuekit_ai.rag.vector_store import get_vector_store
+
+        vs = get_vector_store()
+        raw_col = vs.vectorstore._collection
+        counts = {}
+        for dtype in _INDEX_TYPES:
+            result = raw_col.get(where={"document_type": dtype}, include=[])
+            counts[dtype] = len(result["ids"])
+        st.session_state["idx_counts"] = counts
+        st.session_state["idx_tickers"] = vs.get_tickers_in_index()
+        log.info("[index_manager][refresh] counts=%s", counts)
+    except Exception as e:
+        log.warning("[index_manager][refresh_failed] error=%s", e)
+
+
 def _render_pipeline_config():
     """Read-only sidebar expander showing all pipeline configuration constants."""
     with st.sidebar.expander("⚙️ Pipeline Configuration", expanded=False):
@@ -320,9 +342,18 @@ def _render_index_manager():
                 counts[dtype] = len(result["ids"])
             total = sum(counts.values())
             all_tickers = vs.get_tickers_in_index()
+
+            # Persist so post-analysis updates are visible on next render
+            st.session_state["idx_counts"] = counts
+            st.session_state["idx_tickers"] = all_tickers
         except Exception as e:
-            st.error(f"Could not read index: {e}")
-            return
+            # Fall back to last known good values if available
+            counts = st.session_state.get("idx_counts", {})
+            all_tickers = st.session_state.get("idx_tickers", [])
+            total = sum(counts.values())
+            if not counts:
+                st.error(f"Could not read index: {e}")
+                return
 
         col_cnt, col_btn = st.columns([3, 1])
         col_cnt.caption(f"Total chunks in index: **{total}**")
@@ -1525,10 +1556,10 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
         st.subheader("🔟 TenCap")
         c1, c2, c3 = st.columns(3)
         tc_mos_price = r.get("ten_cap_fair_value", 0) * (1 - mos_pct)
-        c1.metric(
+        c1.metric("TenCap Fair Value", f"${r.get('ten_cap_fair_value', 0):.2f}")
+        c2.metric(
             f"TenCap Buy Price ({mos_pct * 100:.0f}% MOS)", f"${tc_mos_price:.2f}"
         )
-        c2.metric("TenCap Fair Value", f"${r.get('ten_cap_fair_value', 0):.2f}")
         c3.metric("Current Price", f"${r.get('current_stock_price', 0):.2f}")
         st.divider()
 
@@ -1538,8 +1569,8 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
         st.subheader("⏱️ Payback Time")
         c1, c2, c3 = st.columns(3)
         pbt_mos_price = r.get("fair_value", 0) * (1 - mos_pct)
-        c1.metric(f"Buy Price ({mos_pct * 100:.0f}% MOS)", f"${pbt_mos_price:.2f}")
-        c2.metric("Fair Value (2×)", f"${r.get('fair_value', 0):.2f}")
+        c1.metric("Fair Value (2×)", f"${r.get('fair_value', 0):.2f}")
+        c2.metric(f"Buy Price ({mos_pct * 100:.0f}% MOS)", f"${pbt_mos_price:.2f}")
         c3.metric("Current Price", f"${r.get('current_stock_price', 0):.2f}")
         st.divider()
 
@@ -1700,6 +1731,7 @@ def _page_moat():
                 with st.expander("📊 Full Pipeline Overview", expanded=False):
                     _render_quant_pipeline(quant_result, mos_pct=0.50)
 
+                _refresh_index_session_state()
                 log.info(
                     "[app][moat_complete] ticker=%s decision=%s score=%s",
                     ticker,
@@ -1824,6 +1856,7 @@ def _page_overview():
                     "bm_result": ov_bm_result,
                 }
 
+                _refresh_index_session_state()
                 log.info(
                     "[app][overview_complete] ticker=%s recommendation=%s",
                     ticker,
