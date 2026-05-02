@@ -55,20 +55,16 @@ _MOAT_SCORING_INSTRUCTION = (
 
 # Upper bound of each evidence-level score range.
 # Confidence and diversity ceilings (applied in Python) cap downward from here.
-#   NONE     → 1–2   (upper bound 2)
-#   LIMITED  → 3–4   (upper bound 4)
-#   MODERATE → 5–7   (upper bound determined dynamically by sentence count)
-#   STRONG   → 8–10  (upper bound 10)
+#   NONE     → 1–2  (upper bound 2)
+#   LIMITED  → 3–4  (upper bound 4)
+#   MODERATE → 5–7  (upper bound 7)
+#   STRONG   → 8–10 (upper bound 10)
 _EVIDENCE_LEVEL_SCORES: Dict[str, int] = {
     "NONE": 2,
     "LIMITED": 4,
+    "MODERATE": 7,
     "STRONG": 10,
 }
-
-_MODERATE_EVIDENCE_WORDS = frozenset(
-    ["evidence", "demonstrates", "shows", "indicates", "reports",
-     "provides", "offers", "maintains"]
-)
 
 
 # Phrases that signal absent or weak evidence.  If any appear in the analysis
@@ -92,10 +88,6 @@ def _parse_evidence_level(analysis_text: str) -> Tuple[str, int]:
     """
     Extract the ``EVIDENCE_LEVEL: <LEVEL>`` tag from the LLM response,
     enforce the keyword override rule, and return ``(level_str, score)``.
-
-    For MODERATE, the score is determined dynamically by the number of
-    sentences containing any word from ``_MODERATE_EVIDENCE_WORDS``:
-      0–1 sentences → 5,  2 sentences → 6,  3+ sentences → 7.
 
     Override rule: if the analysis text contains any phrase from
     ``_WEAK_EVIDENCE_PHRASES`` the level is capped at LIMITED (≤ 4),
@@ -129,25 +121,6 @@ def _parse_evidence_level(analysis_text: str) -> Tuple[str, int]:
                 triggered,
             )
             level = "LIMITED"
-
-    if level == "MODERATE":
-        sentences = [s for s in analysis_text.split(".") if s.strip()]
-        ev_count = sum(
-            1 for s in sentences
-            if any(w in s.lower() for w in _MODERATE_EVIDENCE_WORDS)
-        )
-        if ev_count >= 3:
-            score = 7
-        elif ev_count == 2:
-            score = 6
-        else:
-            score = 5
-        log.debug(
-            "[moat_analyzer][moderate_score] evidence_sentences=%d score=%d",
-            ev_count,
-            score,
-        )
-        return level, score
 
     return level, _EVIDENCE_LEVEL_SCORES[level]
 
