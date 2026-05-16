@@ -406,7 +406,11 @@ def _render_index_manager():
 
         # ── Step 2: confirm ───────────────────────────────────────────────────
         labels = [_INDEX_TYPES[t] for t in pending_types]
-        ticker_note = f" for {', '.join(pending_tickers)}" if pending_tickers else " for all tickers"
+        ticker_note = (
+            f" for {', '.join(pending_tickers)}"
+            if pending_tickers
+            else " for all tickers"
+        )
         st.warning(
             f"Delete chunks from: {', '.join(labels)}{ticker_note}?\n\nThis cannot be undone."
         )
@@ -427,9 +431,7 @@ def _render_index_manager():
                     else:
                         where_filter = {"document_type": dtype}
 
-                    meta_result = raw_col.get(
-                        where=where_filter, include=["metadatas"]
-                    )
+                    meta_result = raw_col.get(where=where_filter, include=["metadatas"])
                     affected_tickers = {
                         m.get("ticker")
                         for m in meta_result["metadatas"]
@@ -1486,10 +1488,18 @@ def _render_moat_results(ticker: str, year: int, ai: dict, bm_result=None):
                         f"`{bar}` &nbsp; {conf_icon} {conf} confidence"
                         + (f"  ·  {srcs} sources" if srcs else "")
                     )
-                    st.caption(f"Evidence: {md.get('evidence_level')} → {md.get('evidence_score')}/10")
-                    st.caption(f"Confidence: {md.get('confidence')} ({md.get('sources_used')} sources) → ceiling {md.get('confidence_ceiling')}/10")
-                    st.caption(f"Diversity: {md.get('diversity_level')} → ceiling {md.get('diversity_ceiling')}/10")
-                    st.caption(f"Final: min({md.get('evidence_score')}, {md.get('confidence_ceiling')}, {md.get('diversity_ceiling')}) = {md.get('score')}/10")
+                    st.caption(
+                        f"Evidence: {md.get('evidence_level')} → {md.get('evidence_score')}/10"
+                    )
+                    st.caption(
+                        f"Confidence: {md.get('confidence')} ({md.get('sources_used')} sources) → ceiling {md.get('confidence_ceiling')}/10"
+                    )
+                    st.caption(
+                        f"Diversity: {md.get('diversity_level')} → ceiling {md.get('diversity_ceiling')}/10"
+                    )
+                    st.caption(
+                        f"Final: min({md.get('evidence_score')}, {md.get('confidence_ceiling')}, {md.get('diversity_ceiling')}) = {md.get('score')}/10"
+                    )
                     for ev in md.get("evidence") or []:
                         st.caption(f"› {ev.strip()}")
 
@@ -1749,7 +1759,9 @@ def _page_moat():
     _moat = st.session_state.get("moat_result")
     if _moat:
         st.subheader(f"Moat Results — {_moat['ticker']} ({_moat['year']})")
-        _render_moat_results(_moat["ticker"], _moat["year"], _moat["ai"], bm_result=_moat["bm_result"])
+        _render_moat_results(
+            _moat["ticker"], _moat["year"], _moat["ai"], bm_result=_moat["bm_result"]
+        )
         _render_fundamentals(_moat["ticker"], _moat["year"])
         with st.expander("📊 Full Pipeline Overview", expanded=False):
             _render_quant_pipeline(_moat["quant_result"], mos_pct=0.50)
@@ -2058,7 +2070,7 @@ def main():
     authenticator = stauth.Authenticate(
         credentials=credentials_mutable,
         cookie_name=creds.get("cookie_name", "valuekit_auth"),
-        cookie_key=creds.get("cookie_key", "changeme"),
+        cookie_key=creds.get("cookie_key"),
         cookie_expiry_days=int(creds.get("cookie_expiry_days", 1)),
     )
 
