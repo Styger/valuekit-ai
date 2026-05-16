@@ -14,7 +14,11 @@
       "Bash(sed -n '19,45p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/yahoo_news_fetcher.py\")",
       "Bash(sed -n '23,40p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/earnings_fetcher.py\")",
       "Bash(sed -n '26,45p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/sec_fetcher.py\")",
-      "Bash(sed -n '28,47p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/yahoo_info_fetcher.py\")"
+      "Bash(sed -n '28,47p' \"C:/Users/jonas.STYGERS/OneDrive - Hochschule Luzern/HSLU/Wipro/valuekit-ai/backend/valuekit_ai/data_pipeline/yahoo_info_fetcher.py\")",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(git stash *)"
     ]
   }
 }
