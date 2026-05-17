@@ -2066,7 +2066,19 @@ def main():
             os.environ["RAILWAY_ENVIRONMENT"],
         )
 
-    credentials_mutable = _secrets_to_dict(st.secrets["auth"]["credentials"])
+    if os.environ.get("AUTH_ADMIN_NAME"):
+        credentials_mutable = {
+            "usernames": {
+                os.environ["AUTH_ADMIN_NAME"]: {
+                    "name": os.environ["AUTH_ADMIN_NAME"],
+                    "password": os.environ["AUTH_ADMIN_HASHED_PASSWORD"],
+                    "email": os.environ.get("AUTH_ADMIN_EMAIL", ""),
+                }
+            }
+        }
+    else:
+        credentials_mutable = _secrets_to_dict(st.secrets["auth"]["credentials"])
+
     authenticator = stauth.Authenticate(
         credentials=credentials_mutable,
         cookie_name=creds.get("cookie_name", "valuekit_auth"),
