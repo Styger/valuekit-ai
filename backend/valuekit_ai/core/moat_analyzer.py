@@ -407,6 +407,14 @@ class MoatAnalyzer:
                 ticker,
                 moat_key,
             )
+            for i, chunk in enumerate(all_sources[:3]):
+                log.debug(
+                    "[moat_analyzer][ticker_guard_chunk_%d] ticker=%s moat=%s metadata=%s",
+                    i,
+                    ticker,
+                    moat_key,
+                    chunk.get("metadata", {}),
+                )
             return MoatScore(
                 name=moat_config["name"],
                 score=0,
