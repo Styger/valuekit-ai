@@ -135,7 +135,7 @@ def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
         row = get_year(cashflow, y)
         fcf = row.get("freeCashFlow")
         if fcf is not None:
-            fcf_years.append((y, fcf / 1_000_000))
+            fcf_years.append((y, round(fcf / 1_000_000, 0)))
 
     if len(fcf_years) >= 2:
         fcf_vals = [v for _, v in fcf_years]
