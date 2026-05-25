@@ -153,7 +153,7 @@ def check_fundamentals(ticker: str, year: int, base_year: int) -> List[Dict]:
         else:
             fcf_status, fcf_note = "Flag", "Negative FCF detected — cash burn risk"
 
-        trend_str = " → ".join(f"${v:,.0f}M" for _, v in fcf_years)
+        trend_str = " → ".join(f"{y}: ${v:,.0f}M" for y, v in fcf_years)
         results.append(
             {
                 "metric": "FCF Trend (3Y)",
