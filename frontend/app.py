@@ -333,6 +333,7 @@ def _render_index_manager():
     """Sidebar expander to inspect and selectively delete ChromaDB index entries."""
     with st.sidebar.expander("🗄️ Manage Index", expanded=False):
         # ── Count docs per type + fetch live tickers ──────────────────────────
+        raw_col = None
         try:
             from backend.valuekit_ai.rag.vector_store import get_vector_store
 
@@ -366,13 +367,50 @@ def _render_index_manager():
             st.caption(f"- {label}: {counts[dtype]}")
 
         st.markdown("---")
+
+        # ── Ticker multiselect (display filter + deletion scope) ──────────────
+        selected_tickers = st.multiselect(
+            "Filter by ticker:",
+            options=all_tickers,
+            default=[],
+            key="idx_ticker_filter",
+        )
+
+        # ── Per-ticker chunk counts per document type ─────────────────────────
+        ticker_counts: dict = {}
+        if selected_tickers and raw_col is not None:
+            for dtype in _INDEX_TYPES:
+                ticker_counts[dtype] = {}
+                for ticker in selected_tickers:
+                    try:
+                        tr = raw_col.get(
+                            where={
+                                "$and": [
+                                    {"document_type": {"$eq": dtype}},
+                                    {"ticker": {"$eq": ticker}},
+                                ]
+                            },
+                            include=[],
+                        )
+                        ticker_counts[dtype][ticker] = len(tr["ids"])
+                    except Exception:
+                        ticker_counts[dtype][ticker] = 0
+
         st.markdown("**Select types to delete:**")
 
         selected_types = []
         for dtype, label in _INDEX_TYPES.items():
             if counts[dtype] > 0:
+                if selected_tickers and dtype in ticker_counts:
+                    parts = [
+                        f"{t}: {ticker_counts[dtype][t]} chunks"
+                        for t in selected_tickers
+                    ]
+                    checkbox_label = f"{label} — {', '.join(parts)}"
+                else:
+                    checkbox_label = f"{label} ({counts[dtype]})"
                 checked = st.checkbox(
-                    f"{label} ({counts[dtype]})",
+                    checkbox_label,
                     value=False,
                     key=f"idx_del_{dtype}",
                 )
@@ -383,12 +421,6 @@ def _render_index_manager():
 
         if not selected_types:
             return
-
-        st.markdown("**Select tickers (none = all):**")
-        selected_tickers = []
-        for ticker in all_tickers:
-            if st.checkbox(ticker, value=False, key=f"idx_del_ticker_{ticker}"):
-                selected_tickers.append(ticker)
 
         # ── Step 1: first button ──────────────────────────────────────────────
         if st.button("Delete Selected", key="idx_del_step1", type="secondary"):
