@@ -1560,9 +1560,12 @@ def _render_fundamentals(ticker: str, year: int):
         cols = st.columns(len(fund_results))
         for col, check in zip(cols, fund_results):
             icon = _STATUS_ICONS.get(check["status"], "—")
+            value = check["value"]
+            if " → " in value:
+                value = value.replace(" → ", "\n")
             col.metric(
                 label=f"{icon} {check['metric']}",
-                value=check["value"],
+                value=value,
                 help=check["note"],
             )
         _flags = [c for c in fund_results if c["status"] == "Flag"]
