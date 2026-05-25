@@ -1562,12 +1562,15 @@ def _render_fundamentals(ticker: str, year: int):
             icon = _STATUS_ICONS.get(check["status"], "—")
             value = check["value"]
             if " → " in value:
-                value = value.replace(" → ", "\n")
-            col.metric(
-                label=f"{icon} {check['metric']}",
-                value=value,
-                help=check["note"],
-            )
+                parts = value.split(" → ")
+                col.caption(f"{icon} {check['metric']}")
+                col.markdown("  \n".join(f"**{p}**" for p in parts))
+            else:
+                col.metric(
+                    label=f"{icon} {check['metric']}",
+                    value=value,
+                    help=check["note"],
+                )
         _flags = [c for c in fund_results if c["status"] == "Flag"]
         _warns = [c for c in fund_results if c["status"] == "Warning"]
         if _flags:
