@@ -1560,11 +1560,29 @@ def _render_fundamentals(ticker: str, year: int):
         cols = st.columns(len(fund_results))
         for col, check in zip(cols, fund_results):
             icon = _STATUS_ICONS.get(check["status"], "—")
-            col.metric(
-                label=f"{icon} {check['metric']}",
-                value=check["value"],
-                help=check["note"],
-            )
+            value = check["value"]
+            if " → " in value:
+                parts = value.split(" → ")
+                note_escaped = check["note"].replace('"', "&quot;")
+                values_html = "".join(
+                    f"<p style='margin:2px 0;font-size:1.05rem;font-weight:600'>{p}</p>"
+                    for p in parts
+                )
+                col.markdown(
+                    f"<p style='margin:0 0 4px 0;font-size:0.875rem;color:rgb(49,51,63)'>"
+                    f"{icon} {check['metric']}&nbsp;"
+                    f"<span title=\"{note_escaped}\" style='cursor:help;display:inline-flex;"
+                    f"align-items:center;justify-content:center;width:14px;height:14px;"
+                    f"border-radius:50%;border:1px solid #999;font-size:10px;color:#999'>?</span>"
+                    f"</p>{values_html}",
+                    unsafe_allow_html=True,
+                )
+            else:
+                col.metric(
+                    label=f"{icon} {check['metric']}",
+                    value=value,
+                    help=check["note"],
+                )
         _flags = [c for c in fund_results if c["status"] == "Flag"]
         _warns = [c for c in fund_results if c["status"] == "Warning"]
         if _flags:
