@@ -988,6 +988,11 @@ def _page_profitability():
                 c2.metric("ROA", pct(latest.get("roa")))
                 c3.metric("ROIC", pct(latest.get("roic")))
                 c4.metric("Net Margin", pct(latest.get("net_margin")))
+                st.caption(
+                    "* ROIC (Profitability) basiert auf FMP-Daten und kann vom ROIC "
+                    "im Robustness Score abweichen, da unterschiedliche Berechnungsformeln "
+                    "verwendet werden."
+                )
 
                 # Multi-year table
                 if len(results) > 1:
@@ -1983,6 +1988,7 @@ def _page_overview():
 
             st.divider()
 
+        st.subheader("🔍 Qualitative Analysis")
         with st.expander("🤖 AI Moat Analysis", expanded=False):
             _render_moat_results(ticker, year, ai, bm_result=ov_bm_result)
 
