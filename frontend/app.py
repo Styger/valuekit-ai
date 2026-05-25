@@ -986,7 +986,15 @@ def _page_profitability():
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("ROE", pct(latest.get("roe")))
                 c2.metric("ROA", pct(latest.get("roa")))
-                c3.metric("ROIC", pct(latest.get("roic")))
+                c3.metric(
+                    "ROIC",
+                    pct(latest.get("roic")),
+                    help=(
+                        "ROIC shown here is sourced from FMP data and may differ from the ROIC "
+                        "used in the Robustness Score, which uses a simplified formula "
+                        "(Net Income / Invested Capital)."
+                    ),
+                )
                 c4.metric("Net Margin", pct(latest.get("net_margin")))
                 st.caption(
                     "* ROIC (Profitability) basiert auf FMP-Daten und kann vom ROIC "
@@ -1599,7 +1607,15 @@ def _render_quant_pipeline(result: dict, mos_pct: float = 0.50):
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("ROE", _pct(r.get("roe")))
             c2.metric("ROA", _pct(r.get("roa")))
-            c3.metric("ROIC", _pct(r.get("roic")))
+            c3.metric(
+                "ROIC",
+                _pct(r.get("roic")),
+                help=(
+                    "ROIC shown here is sourced from FMP data and may differ from the ROIC "
+                    "used in the Robustness Score, which uses a simplified formula "
+                    "(Net Income / Invested Capital)."
+                ),
+            )
             c4.metric("Net Margin", _pct(r.get("net_margin")))
 
 
