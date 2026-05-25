@@ -414,7 +414,7 @@ def _render_index_manager():
         st.warning(
             f"Delete chunks from: {', '.join(labels)}{ticker_note}?\n\nThis cannot be undone."
         )
-        if st.button("Confirm Delete", key="idx_del_step2", type="primary"):
+        if st.button("Confirm Deletion", key="idx_del_step2", type="primary"):
             try:
                 from backend.cache import get_cache_manager
 
