@@ -6,7 +6,7 @@ import sys
 PIPELINE_VERSION = "1.0.1"
 
 # Valuation defaults (used by app.py and displayed in Pipeline Configuration)
-DEFAULT_DISCOUNT_RATE = 0.15   # 15%
+DEFAULT_DISCOUNT_RATE = 0.15  # 15%
 DEFAULT_MARGIN_OF_SAFETY = 0.50  # 50%
 DEFAULT_BASE_YEAR = 2025
 
@@ -63,7 +63,9 @@ class RAGConfig:
             try:
                 return cast(env_value)
             except (ValueError, TypeError):
-                print(f"Warning: Could not parse {env_var}={env_value!r} as {cast.__name__}, using default {default}")
+                print(
+                    f"Warning: Could not parse {env_var}={env_value!r} as {cast.__name__}, using default {default}"
+                )
 
         # Then try secrets.toml
         try:
@@ -82,7 +84,9 @@ class RAGConfig:
                         try:
                             return cast(value)
                         except (ValueError, TypeError):
-                            print(f"Warning: Could not parse secrets.toml {key_path}={value!r} as {cast.__name__}, using default {default}")
+                            print(
+                                f"Warning: Could not parse secrets.toml {key_path}={value!r} as {cast.__name__}, using default {default}"
+                            )
         except Exception as e:
             print(f"Warning: Could not load from secrets.toml: {e}")
 
@@ -106,7 +110,9 @@ class RAGConfig:
     CHUNK_OVERLAP = 100
 
     # Model Settings
-    EMBEDDING_MODEL = "voyage-finance-2"  # Spezialisiert auf Financial Data
+    EMBEDDING_MODEL = (
+        "voyage-finance-2"  # Voyage AI embedding model (fixed for now, no override)
+    )
 
     # LLM model in LiteLLM provider/model format.
     # Override via secrets.toml [llm] model or LLM_MODEL env var.
@@ -118,7 +124,7 @@ class RAGConfig:
         or "anthropic/claude-sonnet-4-6"
     )
 
-    LLM_TEMPERATURE = 0.0  # Für präzise quantitative Analysen
+    LLM_TEMPERATURE = 0.0  # fixed temperature for deterministic output
 
     # Monthly spend cap enforced by LiteLLM (USD).
     # Override via secrets.toml [llm] monthly_budget_usd or LLM_MONTHLY_BUDGET_USD env var.
