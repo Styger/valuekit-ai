@@ -8,6 +8,7 @@ import logging
 import re
 import sys
 import os
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -157,7 +158,7 @@ def _init_session_state():
     if "moat_result" not in st.session_state:
         st.session_state["moat_result"] = None
     if "login_attempts" not in st.session_state:
-        st.session_state["login_attempts"] = 0
+        st.session_state["login_attempts"] = {}
 
 
 def _check_session_limit():
@@ -2160,20 +2161,21 @@ def main():
         cookie_expiry_days=int(creds.get("cookie_expiry_days", 1)),
     )
 
-    if st.session_state.get("login_attempts", 0) >= 5:
-        st.error("Too many failed login attempts. Please try again later.")
-        return
-
     authenticator.login(location="main", fields={"Form name": "ValueKit AI — Login"})
     auth_status = st.session_state.get("authentication_status")
     name = st.session_state.get("name")
-    username = st.session_state.get("username")
+    username = st.session_state.get("username") or "__unknown__"
+
+    if st.session_state["login_attempts"].get(username, 0) >= 5:
+        st.error("Too many failed login attempts. Please try again later.")
+        return
 
     if auth_status is False:
-        st.session_state["login_attempts"] += 1
-        log.warning(
-            "[auth][failed_login] attempt=%d", st.session_state["login_attempts"]
-        )
+        attempt_count = st.session_state["login_attempts"].get(username, 0) + 1
+        st.session_state["login_attempts"][username] = attempt_count
+        log.warning("[auth][failed_login] username=%s attempt=%d", username, attempt_count)
+        time.sleep(3)
+        log.info("[auth][login_delay] username=%s attempt=%d", username, attempt_count)
         st.error("Username oder Passwort falsch.")
         return
     if auth_status is None:
@@ -2181,7 +2183,7 @@ def main():
         return
 
     # Authenticated
-    st.session_state["login_attempts"] = 0
+    st.session_state["login_attempts"][username] = 0
     authenticator.logout("Logout", "sidebar")
     st.sidebar.caption(f"Eingeloggt als: **{name}**")
 
